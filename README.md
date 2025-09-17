@@ -19,7 +19,7 @@ ii. 推薦：只勾高級設定
 ![預覽](https://i.imgur.com/2sAobaw.png)  
 i. adb_addr填adb路徑  
 ii. e7_language填e7裡的語系(繁中: zh-TW, 簡中: zh-CN, 英文: en-US)
-iii. 打开·D:\Program Files\Netease\MuMu Player 12\shell 目录，输入cmd，回车
+iii. 打开·D:\Program Files\Netease\MuMu Player 12\nx_main 目录，输入cmd，回车
 iiii. 輸入 
 ```shell
 ./adb.exe connect 127.0.0.1:16384
