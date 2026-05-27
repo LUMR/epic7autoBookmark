@@ -1,0 +1,5 @@
+build/
+dist/
+debug_*.png
+__pycache__
+main.exe

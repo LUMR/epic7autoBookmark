@@ -1,4 +1,10 @@
 {
-    "adb_addr": "127.0.0.1:16384",
-    "e7_language": "zh-TW"
+    "window_title": "第七史诗",
+    "e7_language": "zh-TW",
+    "foreground_mode": true,
+    "default_money": 100000000,
+    "default_stone": 30000,
+    "default_covenant": 0,
+    "default_mystic": 0,
+    "default_stone_usage": 99
 }

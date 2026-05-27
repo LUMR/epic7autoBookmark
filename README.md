@@ -1,49 +1,59 @@
 # epic7autoBookmark
 
-第七史詩刷商店的小工具  
-  
+第七史詩刷商店的小工具（Windows 版）
+
 ![image](https://github.com/steven010116/epic7autoBookmark/assets/24381832/526e78b9-df97-4500-9758-55f514eed883)
 
-目前這個版本不支援國服，如果有國服的使用需求可以參考這位大佬維護的專案 [epic7auto](https://github.com/Wrong-pixel/epic7auto)
-
 ## 一、環境
-0. windows10 
-1. Bluestack  
-i. 版本：理論上全版本通用  
-ii. 顯示：橫向、1920x1080、240DPI or 320DPI  
-2. 第七史詩  
-i. 裝置詳細設定和遊戲詳細設定最好都不勾，如果覺得畫面太醜，高畫質套件測試過也是能正常運行  
-ii. 推薦：只勾高級設定  
-3. python3.9.10  
-4. config.json  
-![預覽](https://i.imgur.com/2sAobaw.png)  
-i. adb_addr填adb路徑  
-ii. e7_language填e7裡的語系(繁中: zh-TW, 簡中: zh-CN, 英文: en-US)
-iii. 打开·D:\Program Files\Netease\MuMu Player 12\nx_main 目录，输入cmd，回车
-iiii. 輸入 
-```shell
-./adb.exe connect 127.0.0.1:16384
-```
-iiiii. 打开main.exe，按開始，應該就會自動開始刷了。
-  
+
+0. Windows 10/11
+1. 第七史詩 Windows 版
+   i. 解析度設定為 1920x1080
+2. Python 3.9+（如自行編譯）
+3. config.json
+   i. `window_title` 填遊戲視窗標題（預設 `"Epic Seven"`，打開遊戲後可在工作管理員確認）
+   ii. `e7_language` 填遊戲內的語系（繁中: zh-TW, 簡中: zh-CN, 英文: en-US）
+   iii. `foreground_mode` 設為 `true` 會佔用滑鼠（較可靠），`false` 為背景模式不佔用滑鼠（預設）
+
 ## 二、使用方式
-先將bluestack和第七史詩的設定調整的如上方環境相同。  
-adb功能在設定=>進階=>Android調試橋(ADB)，勾選後會看到路徑。  
-英文路徑在settings=>Advanced=>Android Debug Bridge(ADB)。  
 
-![預覽](https://i.imgur.com/eSamCR3.png)  
+### 方式一：直接執行 EXE
 
-確認第七史詩語系是不是與config.json裡使用的相同(預設為繁中)。
-  
-0. 綠色按鈕code > download zip 整包下載後解壓縮放在同一個資料夾下，路徑最好為英數避免有其他問題。
-1. 參考上面的環境，確認config.json內的參數都是對的。
-2. 開啟遊戲，進到秘密商店後，畫面會長得像下面這樣。  
-  
-![預覽](https://i.imgur.com/KxeSpWM.png)  
+1. 綠色按鈕 Code > Download ZIP 整包下載後解壓縮，放在同一個資料夾下，路徑建議為英數避免問題
+2. 確認 `config.json` 內的參數正確
+3. 開啟遊戲，進到秘密商店
+4. 執行 `main.exe`（在 `dist/` 目錄下）
+5. 選擇條件並輸入目標次數，按下開始
 
-3. 打開小工具(main.exe)，選擇條件並輸入目標次數，按下開始應該就會自己動惹。  
-4. 之前的版本用圖像辨識，而這個版本走的是android adb，已經不會搶滑鼠了，甚至可以縮小放著。  
-5. .exe是用pyinstaller包的，有安全疑慮的話可以自己打包 `pyinstaller -F -w -i main.ico main.py`。
+### 方式二：從原始碼執行
 
-## 三、特別感謝
+1. 安裝依賴：`pip install -r requirements.txt`
+2. 執行：`python main.py`
+
+### 自行打包 EXE
+
+1. 安裝 PyInstaller：`pip install pyinstaller`
+2. 打包：`pyinstaller -F -w -i main.ico --hidden-import=win32api --hidden-import=win32gui --hidden-import=win32ui --hidden-import=win32con --collect-all PyQt6 main.py`
+`python -m PyInstaller main.spec`
+3. 產出的 `dist/main.exe` 需與 `config.json` 和 `img/` 放在同一目錄下才能執行：
+   ```
+   資料夾/
+   ├── main.exe
+   ├── config.json
+   └── img/
+       ├── covenantLocation.png
+       ├── mysticLocation.png
+       ├── buyButton-zh-TW.png
+       └── ...
+   ```
+
+## 三、運作原理
+
+- 透過 Windows API（PrintWindow）背景截取遊戲視窗畫面
+- 使用圖像辨識（OpenCV 模板匹配）定位書籤和按鈕位置
+- 透過 PostMessage 發送點擊訊息，不佔用滑鼠，遊戲視窗可被遮擋
+- 若 PostMessage 點擊無效，可在 config.json 設 `foreground_mode: true` 降級為真實滑鼠操作
+
+## 四、特別感謝
+
 Raven9527 - 自動點擊派遣功能
