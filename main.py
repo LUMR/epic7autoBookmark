@@ -34,7 +34,6 @@ _required_images = [
     f"./img/buyConfirmButton-{e7_language}.png",
     f"./img/refreshButton-{e7_language}.png",
     f"./img/refreshYesButton-{e7_language}.png",
-    f"./img/restartDispatchButton-{e7_language}.png",
 ]
 _missing = [p for p in _required_images if not os.path.exists(p)]
 if _missing:
@@ -79,6 +78,23 @@ def wait_for(hwnd, condition_fn, timeout=5.0, interval=0.3):
 
 def short_sleep(base=1.0):
     time.sleep(base + random.uniform(-0.2, 0.3))
+
+
+def wait_for_stable(hwnd, before_img=None, timeout=15.0, interval=0.5, threshold=10.0, before_threshold=15.0):
+    """等待画面停止变化（loading动画结束）。连续两次截图差异小于阈值且与刷新前不同则认为稳定。"""
+    deadline = time.time() + timeout
+    prev = capture_window(hwnd)
+    while time.time() < deadline:
+        time.sleep(interval)
+        curr = capture_window(hwnd)
+        diff = cv2.absdiff(prev, curr).mean()
+        if diff < threshold:
+            if before_img is not None and cv2.absdiff(before_img, curr).mean() < before_threshold:
+                prev = curr
+                continue
+            return True
+        prev = curr
+    return False
 
 
 def capture_window(hwnd):
@@ -163,40 +179,17 @@ class Worker(QtCore.QThread):
         self.expectNum = 0
         self.moneyNum = 0
         self.stoneNum = 0
-        self.autoRestartDispatch = False
 
-    def setVariable(self, startMode, expectNum, moneyNum, stoneNum, autoRestartDispatch):
+    def setVariable(self, startMode, expectNum, moneyNum, stoneNum):
         self.startMode = startMode
         self.expectNum = expectNum
         self.moneyNum = moneyNum
         self.stoneNum = stoneNum
-        self.autoRestartDispatch = autoRestartDispatch
 
     def _scale(self, hwnd, x, y):
         rect = win32gui.GetClientRect(hwnd)
         return x * rect[2] / REF_WIDTH, y * rect[3] / REF_HEIGHT
 
-    def _check_dispatch(self, hwnd, restartDispatchImg):
-        if not self.autoRestartDispatch:
-            return
-        screenshot = capture_window(hwnd)
-        loc = aircv.find_template(screenshot, restartDispatchImg, 0.75)
-        if not loc:
-            return
-        print("dispatch mission completed!")
-        self.emitLog.emit("重新進行派遣任務")
-        for _ in range(MAX_RETRY):
-            pos = loc["result"]
-            dx, dy = self._scale(hwnd, pos[0], pos[1])
-            double_click_at(hwnd, dx, dy)
-            time.sleep(1)
-            double_click_at(hwnd, dx, dy)
-            time.sleep(1)
-            new_screenshot = capture_window(hwnd)
-            loc = aircv.find_template(new_screenshot, restartDispatchImg, 0.75)
-            if not loc:
-                break
-        time.sleep(1)
 
     def run(self):
         self.isStart.emit()
@@ -248,7 +241,6 @@ class Worker(QtCore.QThread):
             buyConfirmButton = aircv.imread(f"./img/buyConfirmButton-{e7_language}.png")
             refreshButton = aircv.imread(f"./img/refreshButton-{e7_language}.png")
             refreshYesButton = aircv.imread(f"./img/refreshYesButton-{e7_language}.png")
-            restartDispatchButton = aircv.imread(f"./img/restartDispatchButton-{e7_language}.png")
 
             needRefresh = False
             covenantFound = False
@@ -272,8 +264,6 @@ class Worker(QtCore.QThread):
                         self.emitLog.emit(f"點擊聖約商品 ({sx:.0f},{sy:.0f}) 重試:{retry+1}")
                         double_click_at(hwnd, sx, sy)
 
-                        self._check_dispatch(hwnd, restartDispatchButton)
-
                         buyButtonLocation = wait_for(hwnd, lambda img: aircv.find_template(img, buyConfirmButton, 0.85))
 
                         if buyButtonLocation:
@@ -284,7 +274,6 @@ class Worker(QtCore.QThread):
                                 bx, by = self._scale(hwnd, buyPos[0], buyPos[1])
                                 self.emitLog.emit(f"點擊購買按鈕 ({bx:.0f},{by:.0f}) 重試:{retry2+1}")
                                 double_click_at(hwnd, bx, by)
-                                self._check_dispatch(hwnd, restartDispatchButton)
                                 gone = wait_for(hwnd, lambda img: True if not aircv.find_template(img, buyConfirmButton, 0.85) else None)
                                 if gone:
                                     break
@@ -315,8 +304,6 @@ class Worker(QtCore.QThread):
                         self.emitLog.emit(f"點擊神秘商品 ({sx:.0f},{sy:.0f}) 重試:{retry+1}")
                         double_click_at(hwnd, sx, sy)
 
-                        self._check_dispatch(hwnd, restartDispatchButton)
-
                         buyButtonLocation = wait_for(hwnd, lambda img: aircv.find_template(img, buyConfirmButton, 0.85))
 
                         if buyButtonLocation:
@@ -327,7 +314,6 @@ class Worker(QtCore.QThread):
                                 bx, by = self._scale(hwnd, buyPos[0], buyPos[1])
                                 self.emitLog.emit(f"點擊購買按鈕 ({bx:.0f},{by:.0f}) 重試:{retry2+1}")
                                 double_click_at(hwnd, bx, by)
-                                self._check_dispatch(hwnd, restartDispatchButton)
                                 gone = wait_for(hwnd, lambda img: True if not aircv.find_template(img, buyConfirmButton, 0.85) else None)
                                 if gone:
                                     break
@@ -355,14 +341,13 @@ class Worker(QtCore.QThread):
                         needRefresh = False
                         short_sleep(1.0)
                         continue
+                    before_refresh = capture_window(hwnd)
                     for retry in range(MAX_RETRY):
                         short_sleep(0.5)
                         refreshPos = refreshButtonLocation["result"]
                         rx, ry = self._scale(hwnd, refreshPos[0], refreshPos[1])
                         self.emitLog.emit(f"點擊刷新按鈕 ({rx:.0f},{ry:.0f}) 重試:{retry+1}")
                         double_click_at(hwnd, rx, ry)
-
-                        self._check_dispatch(hwnd, restartDispatchButton)
 
                         refreshYesLoc = wait_for(hwnd, lambda img: aircv.find_template(img, refreshYesButton, 0.9))
 
@@ -374,9 +359,12 @@ class Worker(QtCore.QThread):
                                 yx, yy = self._scale(hwnd, yesPos[0], yesPos[1])
                                 self.emitLog.emit(f"點擊確認刷新 ({yx:.0f},{yy:.0f}) 重試:{retry2+1}")
                                 double_click_at(hwnd, yx, yy)
-                                self._check_dispatch(hwnd, restartDispatchButton)
                                 gone = wait_for(hwnd, lambda img: True if not aircv.find_template(img, refreshYesButton, 0.9) else None, timeout=8.0)
                                 if gone:
+                                    # 等待画面稳定（loading动画结束）
+                                    if not wait_for_stable(hwnd, before_refresh):
+                                        self.emitLog.emit("商店載入超時，重試外層...")
+                                        continue
                                     break
                             else:
                                 self.emitLog.emit("刷新確認超時，重試外層...")
@@ -414,7 +402,6 @@ class Worker(QtCore.QThread):
                     changed = cv2.absdiff(before_swipe, after_swipe).mean() > 5
                     if not changed:
                         self.emitLog.emit("滑動未生效")
-                    self._check_dispatch(hwnd, restartDispatchButton)
 
             self.emitLog.emit("===== 結算 =====")
             self.emitLog.emit("共花費:")
@@ -576,19 +563,16 @@ class Ui_Main(object):
             | QtCore.Qt.AlignmentFlag.AlignVCenter
         )
         self.stoneInput.setObjectName("stoneInput")
-        self.autoRestartDispatchCheckbox = QtWidgets.QCheckBox(self.functionTab)
-        self.autoRestartDispatchCheckbox.setGeometry(QtCore.QRect(40, 90, 150, 21))
-        self.autoRestartDispatchCheckbox.setObjectName("autoRestartDispatchCheckbox")
-        self.autoRestartDispatchCheckbox.setChecked(False)
         self.covenantRadioButton = QtWidgets.QRadioButton(self.functionTab)
         self.covenantRadioButton.setGeometry(QtCore.QRect(40, 130, 91, 21))
-        self.covenantRadioButton.setChecked(True)
+        self.covenantRadioButton.setChecked(False)
         self.covenantRadioButton.setObjectName("covenantRadioButton")
         self.mysticRadioButton = QtWidgets.QRadioButton(self.functionTab)
         self.mysticRadioButton.setGeometry(QtCore.QRect(40, 170, 91, 21))
         self.mysticRadioButton.setObjectName("mysticRadioButton")
         self.stoneRadioButton = QtWidgets.QRadioButton(self.functionTab)
         self.stoneRadioButton.setGeometry(QtCore.QRect(40, 210, 91, 21))
+        self.stoneRadioButton.setChecked(True)
         self.stoneRadioButton.setObjectName("stoneRadioButton")
         self.tabWidget.addTab(self.functionTab, "")
         self.introductionTab = QtWidgets.QWidget()
@@ -662,7 +646,6 @@ class Ui_Main(object):
         )
         self.stoneTimeLabel.setText(_translate("Main", "個"))
         self.stoneInput.setText(_translate("Main", default_stone_usage))
-        self.autoRestartDispatchCheckbox.setText(_translate("Main", "自動重新派遣"))
         self.covenantRadioButton.setText(_translate("Main", "聖約書籤"))
         self.mysticRadioButton.setText(_translate("Main", "神秘書籤"))
         self.stoneRadioButton.setText(_translate("Main", "天空石"))
@@ -713,7 +696,6 @@ class Ui_Main(object):
                 if self.stoneTotalShowEdit.text().isdigit()
                 else 0
             )
-            autoRestartDispatch = self.autoRestartDispatchCheckbox.isChecked()
 
             if moneyNum == 0 or stoneNum == 0:
                 self.logTextBrowser.setText("")
@@ -750,7 +732,7 @@ class Ui_Main(object):
                 self.startProperty(False)
                 return
 
-            self.worker.setVariable(startMode, expectNum, moneyNum, stoneNum, autoRestartDispatch)
+            self.worker.setVariable(startMode, expectNum, moneyNum, stoneNum)
             self.worker.start()
         else:
             self.worker.terminate()
@@ -771,7 +753,6 @@ class Ui_Main(object):
         self.covenantInput.setDisabled(isDisabled)
         self.mysticInput.setDisabled(isDisabled)
         self.stoneInput.setDisabled(isDisabled)
-        self.autoRestartDispatchCheckbox.setDisabled(isDisabled)
 
     def startWorker(self):
         self.logTextBrowser.setText("")
