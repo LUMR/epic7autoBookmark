@@ -3,11 +3,18 @@ from numpy import asarray
 import aircv
 import cv2
 import json
+import os
+import sys
 import ctypes
 import time
+import random
 
-# DPI awareness for accurate coordinates
-ctypes.windll.user32.SetProcessDPIAware()
+# Admin elevation
+if not ctypes.windll.shell32.IsUserAnAdmin():
+    params = ' '.join([f'"{a}"' if ' ' in a else a for a in sys.argv])
+    exe = sys.executable.replace("python.exe", "pythonw.exe")
+    ctypes.windll.shell32.ShellExecuteW(None, "runas", exe, params, None, 1)
+    sys.exit(0)
 
 import win32gui
 import win32api
@@ -18,25 +25,26 @@ import win32con
 with open("config.json", "r", encoding="utf-8") as f:
     config = json.load(f)
 e7_language = config["e7_language"]
+VALID_LANGUAGES = ["zh-TW", "zh-CN", "en-US"]
+if e7_language not in VALID_LANGUAGES:
+    raise ValueError(f"不支援的語系: {e7_language}，可選: {VALID_LANGUAGES}")
+_required_images = [
+    "./img/covenantLocation.png",
+    "./img/mysticLocation.png",
+    f"./img/buyConfirmButton-{e7_language}.png",
+    f"./img/refreshButton-{e7_language}.png",
+    f"./img/refreshYesButton-{e7_language}.png",
+    f"./img/restartDispatchButton-{e7_language}.png",
+]
+_missing = [p for p in _required_images if not os.path.exists(p)]
+if _missing:
+    raise FileNotFoundError(f"缺少語系圖片檔案 (e7_language={e7_language}): {_missing}")
 window_title = config.get("window_title", "Epic Seven")
-foreground_mode = config.get("foreground_mode", False)
 default_money = str(config.get("default_money", 0))
 default_stone = str(config.get("default_stone", 0))
 default_covenant = str(config.get("default_covenant", 0))
 default_mystic = str(config.get("default_mystic", 0))
 default_stone_usage = str(config.get("default_stone_usage", 0))
-
-# Windows API constants
-WM_LBUTTONDOWN = 0x0201
-WM_LBUTTONUP = 0x0202
-WM_MOUSEMOVE = 0x0200
-MK_LBUTTON = 0x0001
-PW_RENDERFULLCONTENT = 2
-user32 = ctypes.windll.user32
-
-
-def make_lparam(x, y):
-    return (y << 16) | (x & 0xFFFF)
 
 
 def find_game_window():
@@ -56,6 +64,21 @@ def find_game_window():
 MAX_RETRY = 20
 REF_WIDTH = 1920
 REF_HEIGHT = 1080
+
+
+def wait_for(hwnd, condition_fn, timeout=5.0, interval=0.3):
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        time.sleep(interval)
+        img = capture_window(hwnd)
+        result = condition_fn(img)
+        if result is not None:
+            return result
+    return None
+
+
+def short_sleep(base=1.0):
+    time.sleep(base + random.uniform(-0.2, 0.3))
 
 
 def capture_window(hwnd):
@@ -95,14 +118,7 @@ def capture_window(hwnd):
         win32gui.DeleteObject(bitmap.GetHandle())
 
 
-def post_click(hwnd, x, y):
-    lparam = make_lparam(int(x), int(y))
-    user32.PostMessageW(hwnd, WM_LBUTTONDOWN, MK_LBUTTON, lparam)
-    time.sleep(0.02)
-    user32.PostMessageW(hwnd, WM_LBUTTONUP, 0, lparam)
-
-
-def real_click(hwnd, x, y):
+def click_at(hwnd, x, y):
     sx, sy = win32gui.ClientToScreen(hwnd, (int(x), int(y)))
     win32api.SetCursorPos((sx, sy))
     time.sleep(0.02)
@@ -111,34 +127,13 @@ def real_click(hwnd, x, y):
     win32api.mouse_event(win32con.MOUSEEVENTF_LEFTUP, sx, sy, 0, 0)
 
 
-def click_at(hwnd, x, y):
-    if foreground_mode:
-        real_click(hwnd, x, y)
-    else:
-        post_click(hwnd, x, y)
-
-
 def double_click_at(hwnd, x, y):
     click_at(hwnd, x, y)
     time.sleep(0.05)
     click_at(hwnd, x, y)
 
 
-def post_swipe(hwnd, x1, y1, x2, y2, duration=0.1):
-    lparam = make_lparam(int(x1), int(y1))
-    user32.PostMessageW(hwnd, WM_LBUTTONDOWN, MK_LBUTTON, lparam)
-    steps = 10
-    step_delay = duration / steps
-    for i in range(1, steps + 1):
-        t = i / steps
-        cx = int(x1 + (x2 - x1) * t)
-        cy = int(y1 + (y2 - y1) * t)
-        user32.PostMessageW(hwnd, WM_MOUSEMOVE, MK_LBUTTON, make_lparam(cx, cy))
-        time.sleep(step_delay)
-    user32.PostMessageW(hwnd, WM_LBUTTONUP, 0, make_lparam(int(x2), int(y2)))
-
-
-def real_swipe(hwnd, x1, y1, x2, y2, duration=0.1):
+def swipe_at(hwnd, x1, y1, x2, y2, duration=0.1):
     sx1, sy1 = win32gui.ClientToScreen(hwnd, (int(x1), int(y1)))
     sx2, sy2 = win32gui.ClientToScreen(hwnd, (int(x2), int(y2)))
     win32api.SetCursorPos((sx1, sy1))
@@ -152,13 +147,6 @@ def real_swipe(hwnd, x1, y1, x2, y2, duration=0.1):
         win32api.SetCursorPos((cx, cy))
         time.sleep(step_delay)
     win32api.mouse_event(win32con.MOUSEEVENTF_LEFTUP, sx2, sy2, 0, 0)
-
-
-def swipe_at(hwnd, x1, y1, x2, y2, duration=0.1):
-    if foreground_mode:
-        real_swipe(hwnd, x1, y1, x2, y2, duration)
-    else:
-        post_swipe(hwnd, x1, y1, x2, y2, duration)
 
 
 class Worker(QtCore.QThread):
@@ -217,7 +205,7 @@ class Worker(QtCore.QThread):
 
         try:
             self.emitLog.emit("===== 初始化 =====")
-            time.sleep(1)
+            short_sleep(0.5)
 
             if self.moneyNum < 280000:
                 self.emitLog.emit("錯誤: 金幣不足28萬")
@@ -232,25 +220,24 @@ class Worker(QtCore.QThread):
                 raise ValueError("stone input error")
 
             self.emitLog.emit("正在尋找遊戲視窗......")
-            time.sleep(1)
+            short_sleep(0.5)
 
             hwnd = find_game_window()
             if not hwnd:
                 self.emitLog.emit("錯誤: 找不到遊戲視窗")
                 raise RuntimeError("game window not found")
 
-            if foreground_mode:
-                win32gui.SetForegroundWindow(hwnd)
-                time.sleep(0.5)
+            win32gui.SetForegroundWindow(hwnd)
+            short_sleep(0.5)
 
             self.emitLog.emit("遊戲視窗已找到")
-            time.sleep(1)
+            short_sleep(0.5)
 
             self.emitLog.emit("初始化完成")
-            time.sleep(1)
+            short_sleep(0.5)
 
             self.emitLog.emit("===== 刷商店 =====")
-            time.sleep(1)
+            short_sleep(0.5)
 
             refreshTime = 0
             covenantFoundTime = 0
@@ -258,7 +245,6 @@ class Worker(QtCore.QThread):
 
             covenant = aircv.imread("./img/covenantLocation.png")
             mystic = aircv.imread("./img/mysticLocation.png")
-            buyButton = aircv.imread(f"./img/buyButton-{e7_language}.png")
             buyConfirmButton = aircv.imread(f"./img/buyConfirmButton-{e7_language}.png")
             refreshButton = aircv.imread(f"./img/refreshButton-{e7_language}.png")
             refreshYesButton = aircv.imread(f"./img/refreshYesButton-{e7_language}.png")
@@ -280,30 +266,31 @@ class Worker(QtCore.QThread):
                     self.emitLog.emit(f"找到聖約書籤 位置:({covenantLocation['result'][0]:.0f},{covenantLocation['result'][1]:.0f})")
 
                     for retry in range(MAX_RETRY):
+                        short_sleep(0.5)
                         pos = covenantLocation["result"]
                         sx, sy = self._scale(hwnd, pos[0] + 800, pos[1] + 40)
                         self.emitLog.emit(f"點擊聖約商品 ({sx:.0f},{sy:.0f}) 重試:{retry+1}")
                         double_click_at(hwnd, sx, sy)
-                        time.sleep(1)
 
                         self._check_dispatch(hwnd, restartDispatchButton)
 
-                        buy_screenshot = capture_window(hwnd)
-                        buyButtonLocation = aircv.find_template(buy_screenshot, buyConfirmButton, 0.85)
+                        buyButtonLocation = wait_for(hwnd, lambda img: aircv.find_template(img, buyConfirmButton, 0.85))
 
                         if buyButtonLocation:
                             buyPos = buyButtonLocation["result"]
 
                             for retry2 in range(MAX_RETRY):
+                                short_sleep(0.3)
                                 bx, by = self._scale(hwnd, buyPos[0], buyPos[1])
                                 self.emitLog.emit(f"點擊購買按鈕 ({bx:.0f},{by:.0f}) 重試:{retry2+1}")
                                 double_click_at(hwnd, bx, by)
-                                time.sleep(1)
                                 self._check_dispatch(hwnd, restartDispatchButton)
-                                after_buy = capture_window(hwnd)
-                                if not aircv.find_template(after_buy, buyConfirmButton, 0.85):
+                                gone = wait_for(hwnd, lambda img: True if not aircv.find_template(img, buyConfirmButton, 0.85) else None)
+                                if gone:
                                     break
-                                time.sleep(1)
+                            else:
+                                self.emitLog.emit("購買確認超時，跳過")
+                                continue
 
                             if self.startMode == 1:
                                 self.expectNum -= 1
@@ -314,7 +301,7 @@ class Worker(QtCore.QThread):
                             self.emitMoney.emit(str(self.moneyNum))
                             break
                         self.emitLog.emit("未找到購買按鈕，重試...")
-                        time.sleep(1)
+                        short_sleep(1.0)
 
                 mysticLocation = aircv.find_template(screenshot, mystic, 0.9)
                 if mysticLocation and not mysticFound:
@@ -322,30 +309,31 @@ class Worker(QtCore.QThread):
                     self.emitLog.emit(f"找到神秘書籤 位置:({mysticLocation['result'][0]:.0f},{mysticLocation['result'][1]:.0f})")
 
                     for retry in range(MAX_RETRY):
+                        short_sleep(0.5)
                         pos = mysticLocation["result"]
                         sx, sy = self._scale(hwnd, pos[0] + 800, pos[1] + 40)
                         self.emitLog.emit(f"點擊神秘商品 ({sx:.0f},{sy:.0f}) 重試:{retry+1}")
                         double_click_at(hwnd, sx, sy)
-                        time.sleep(1)
 
                         self._check_dispatch(hwnd, restartDispatchButton)
 
-                        buy_screenshot = capture_window(hwnd)
-                        buyButtonLocation = aircv.find_template(buy_screenshot, buyConfirmButton, 0.85)
+                        buyButtonLocation = wait_for(hwnd, lambda img: aircv.find_template(img, buyConfirmButton, 0.85))
 
                         if buyButtonLocation:
                             buyPos = buyButtonLocation["result"]
 
                             for retry2 in range(MAX_RETRY):
+                                short_sleep(0.3)
                                 bx, by = self._scale(hwnd, buyPos[0], buyPos[1])
                                 self.emitLog.emit(f"點擊購買按鈕 ({bx:.0f},{by:.0f}) 重試:{retry2+1}")
                                 double_click_at(hwnd, bx, by)
-                                time.sleep(1)
                                 self._check_dispatch(hwnd, restartDispatchButton)
-                                after_buy = capture_window(hwnd)
-                                if not aircv.find_template(after_buy, buyConfirmButton, 0.85):
+                                gone = wait_for(hwnd, lambda img: True if not aircv.find_template(img, buyConfirmButton, 0.85) else None)
+                                if gone:
                                     break
-                                time.sleep(1)
+                            else:
+                                self.emitLog.emit("購買確認超時，跳過")
+                                continue
 
                             if self.startMode == 2:
                                 self.expectNum -= 1
@@ -356,39 +344,43 @@ class Worker(QtCore.QThread):
                             self.emitMoney.emit(str(self.moneyNum))
                             break
                         self.emitLog.emit("未找到購買按鈕，重試...")
-                        time.sleep(1)
+                        short_sleep(1.0)
 
                 if needRefresh:
                     refreshButtonLocation = aircv.find_template(screenshot, refreshButton, 0.8)
                     if not refreshButtonLocation:
-                        self.emitLog.emit("找不到刷新按鈕，重試中...")
-                        time.sleep(2)
+                        self.emitLog.emit("找不到刷新按鈕，重新滑動...")
+                        covenantFound = False
+                        mysticFound = False
+                        needRefresh = False
+                        short_sleep(1.0)
                         continue
                     for retry in range(MAX_RETRY):
+                        short_sleep(0.5)
                         refreshPos = refreshButtonLocation["result"]
                         rx, ry = self._scale(hwnd, refreshPos[0], refreshPos[1])
                         self.emitLog.emit(f"點擊刷新按鈕 ({rx:.0f},{ry:.0f}) 重試:{retry+1}")
                         double_click_at(hwnd, rx, ry)
-                        time.sleep(1)
 
                         self._check_dispatch(hwnd, restartDispatchButton)
 
-                        confirm_screenshot = capture_window(hwnd)
-                        refreshYesLoc = aircv.find_template(confirm_screenshot, refreshYesButton, 0.9)
+                        refreshYesLoc = wait_for(hwnd, lambda img: aircv.find_template(img, refreshYesButton, 0.9))
 
                         if refreshYesLoc:
                             yesPos = refreshYesLoc["result"]
 
                             for retry2 in range(MAX_RETRY):
+                                short_sleep(0.3)
                                 yx, yy = self._scale(hwnd, yesPos[0], yesPos[1])
                                 self.emitLog.emit(f"點擊確認刷新 ({yx:.0f},{yy:.0f}) 重試:{retry2+1}")
                                 double_click_at(hwnd, yx, yy)
-                                time.sleep(1)
                                 self._check_dispatch(hwnd, restartDispatchButton)
-                                after_yes = capture_window(hwnd)
-                                if not aircv.find_template(after_yes, refreshYesButton, 0.9):
+                                gone = wait_for(hwnd, lambda img: True if not aircv.find_template(img, refreshYesButton, 0.9) else None, timeout=8.0)
+                                if gone:
                                     break
-                                time.sleep(1)
+                            else:
+                                self.emitLog.emit("刷新確認超時，重試外層...")
+                                continue
 
                             self.stoneNum -= 3
                             self.emitStone.emit(str(self.stoneNum))
@@ -403,19 +395,25 @@ class Worker(QtCore.QThread):
                             covenantFound = False
                             mysticFound = False
 
-                            time.sleep(1)
+                            short_sleep(1.5)
                             break
                         self.emitLog.emit("未彈出確認對話框，重試...")
-                        time.sleep(1)
+                        short_sleep(1.0)
 
                 else:
                     self.emitLog.emit("滑動商店列表")
+                    short_sleep(0.3)
+                    before_swipe = capture_window(hwnd)
                     sx1, sy1 = self._scale(hwnd, 1400, 500)
                     sx2, sy2 = self._scale(hwnd, 1400, 200)
                     swipe_at(hwnd, sx1, sy1, sx2, sy2, 0.1)
                     needRefresh = True
 
-                    time.sleep(1)
+                    short_sleep(1.0)
+                    after_swipe = capture_window(hwnd)
+                    changed = cv2.absdiff(before_swipe, after_swipe).mean() > 5
+                    if not changed:
+                        self.emitLog.emit("滑動未生效")
                     self._check_dispatch(hwnd, restartDispatchButton)
 
             self.emitLog.emit("===== 結算 =====")

@@ -3,3 +3,6 @@ dist/
 debug_*.png
 __pycache__
 main.exe
+test_*.py
+test_*.png
+desktop.ini
