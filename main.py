@@ -179,6 +179,7 @@ class Worker(QtCore.QThread):
         self.expectNum = 0
         self.moneyNum = 0
         self.stoneNum = 0
+        self._running = False
 
     def setVariable(self, startMode, expectNum, moneyNum, stoneNum):
         self.startMode = startMode
@@ -245,16 +246,17 @@ class Worker(QtCore.QThread):
             needRefresh = False
             covenantFound = False
             mysticFound = False
+            swipeFailCount = 0
 
             loopCount = 0
-            while self.expectNum > 0 and self.moneyNum > 280000 and self.stoneNum >= 3:
+            self._running = True
+            while self._running and self.expectNum > 0 and self.moneyNum > 280000 and self.stoneNum >= 3:
                 loopCount += 1
                 screenshot = capture_window(hwnd)
                 self.emitLog.emit(f"--- 第{loopCount}輪掃描 ---")
 
                 covenantLocation = aircv.find_template(screenshot, covenant, 0.9)
                 if covenantLocation and not covenantFound:
-                    covenantFound = True
                     self.emitLog.emit(f"找到聖約書籤 位置:({covenantLocation['result'][0]:.0f},{covenantLocation['result'][1]:.0f})")
 
                     for retry in range(MAX_RETRY):
@@ -288,13 +290,13 @@ class Worker(QtCore.QThread):
                             self.moneyNum -= 184000
                             covenantFoundTime += 1
                             self.emitMoney.emit(str(self.moneyNum))
+                            covenantFound = True
                             break
                         self.emitLog.emit("未找到購買按鈕，重試...")
                         short_sleep(1.0)
 
                 mysticLocation = aircv.find_template(screenshot, mystic, 0.9)
                 if mysticLocation and not mysticFound:
-                    mysticFound = True
                     self.emitLog.emit(f"找到神秘書籤 位置:({mysticLocation['result'][0]:.0f},{mysticLocation['result'][1]:.0f})")
 
                     for retry in range(MAX_RETRY):
@@ -328,6 +330,7 @@ class Worker(QtCore.QThread):
                             self.moneyNum -= 280000
                             mysticFoundTime += 1
                             self.emitMoney.emit(str(self.moneyNum))
+                            mysticFound = True
                             break
                         self.emitLog.emit("未找到購買按鈕，重試...")
                         short_sleep(1.0)
@@ -354,6 +357,7 @@ class Worker(QtCore.QThread):
                         if refreshYesLoc:
                             yesPos = refreshYesLoc["result"]
 
+                            stable = False
                             for retry2 in range(MAX_RETRY):
                                 short_sleep(0.3)
                                 yx, yy = self._scale(hwnd, yesPos[0], yesPos[1])
@@ -361,13 +365,15 @@ class Worker(QtCore.QThread):
                                 double_click_at(hwnd, yx, yy)
                                 gone = wait_for(hwnd, lambda img: True if not aircv.find_template(img, refreshYesButton, 0.9) else None, timeout=8.0)
                                 if gone:
-                                    # 等待画面稳定（loading动画结束）
-                                    if not wait_for_stable(hwnd, before_refresh):
+                                    if wait_for_stable(hwnd, before_refresh):
+                                        stable = True
+                                    else:
                                         self.emitLog.emit("商店載入超時，重試外層...")
-                                        continue
                                     break
                             else:
                                 self.emitLog.emit("刷新確認超時，重試外層...")
+
+                            if not stable:
                                 continue
 
                             self.stoneNum -= 3
@@ -401,7 +407,13 @@ class Worker(QtCore.QThread):
                     after_swipe = capture_window(hwnd)
                     changed = cv2.absdiff(before_swipe, after_swipe).mean() > 5
                     if not changed:
-                        self.emitLog.emit("滑動未生效")
+                        swipeFailCount += 1
+                        self.emitLog.emit(f"滑動未生效 ({swipeFailCount}/5)")
+                        if swipeFailCount >= 5:
+                            self.emitLog.emit("連續滑動失敗過多，停止")
+                            raise RuntimeError("swipe failed repeatedly")
+                    else:
+                        swipeFailCount = 0
 
             self.emitLog.emit("===== 結算 =====")
             self.emitLog.emit("共花費:")
@@ -721,6 +733,7 @@ class Ui_Main(object):
                 startMode = 3
                 stone = self.stoneInput.text()
                 expectNum = int(stone) if stone.isdigit() else 0
+                expectNum = expectNum - (expectNum % 3)
                 self.stoneInput.setText(str(expectNum))
 
             else:
@@ -732,10 +745,19 @@ class Ui_Main(object):
                 self.startProperty(False)
                 return
 
+            if expectNum == 0:
+                self.logTextBrowser.setText("")
+                self.logTextBrowser.append("請輸入有效的次數或數量")
+                self.logTextBrowser.append("===== 停止 =====")
+                self.start = not self.start
+                self.startProperty(False)
+                return
+
             self.worker.setVariable(startMode, expectNum, moneyNum, stoneNum)
             self.worker.start()
         else:
-            self.worker.terminate()
+            self.worker._running = False
+            self.worker.wait(5000)
             self.logTextBrowser.append("===== 停止 =====")
             self.startProperty(False)
 
