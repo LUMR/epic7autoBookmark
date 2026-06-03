@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-第七史詩 (Epic Seven) Windows 版自動刷商店工具。通過 Windows 原生 API 操作遊戲視窗，使用圖像識別自動在秘密商店中尋找並購買聖約書籤和神秘書籤。
+第七史詩 (Epic Seven) Windows 版自動刷商店工具。通過 Windows 原生 API 操作遊戲視窗，使用 OpenCV 模板匹配自動在秘密商店中尋找並購買聖約書籤和神秘書籤。
 
 ## Build & Run
 
@@ -13,55 +13,59 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **依賴安裝**: `pip install -r requirements.txt`
 - Python 版本: 3.9+
 
-## Dependencies
+## Test Files
 
-- **PyQt6** — GUI 框架
-- **pywin32** — Windows API（截圖、視窗操作、滑鼠控制）
-- **aircv** — 基於 OpenCV 的模板匹配圖像識別
-- **numpy** — 圖像陣列處理
-- **opencv-python** (cv2) — 圖像縮放、畫面差異比對
+`test_*.py` 為獨立的調試/驗證腳本（非單元測試框架），直接 `python test_xxx.py` 執行。用於驗證特定模板在不同置信度下的識別效果。
 
 ## Architecture
 
-單文件應用 (`main.py`, ~800 行)，包含兩個核心類：
+多模組架構，核心流程為：GUI 啟動 → Worker 線程 → 狀態機驅動的 ShopFlow。
 
-- **`Worker`** (QThread) — 後台線程執行自動化邏輯。截圖 → 模板匹配定位 → 滑鼠點擊。使用 PyQt Signal 與 UI 通信。
-- **`Ui_Main`** (QWidget) — GUI 佈局與事件處理。手寫 PyQt6 UI 代碼（非 .ui 生成）。
+### 模組職責
 
-### Windows 交互層
+| 模組 | 職責 |
+|------|------|
+| `main.py` | 入口：管理員提權 + PyQt6 啟動 |
+| `gui.py` | PyQt6 GUI（手寫 UI，非 .ui 生成），管理 Worker 生命週期 |
+| `worker.py` | QThread 後台線程：組裝組件、啟動 ShopFlow、通過 Signal 更新 UI |
+| `config.py` | `AppConfig` dataclass，從 `config.json` 加載，支持舊欄位名映射 |
+| `automation/state.py` | `ShopState` 枚舉 + `ShopContext` dataclass（狀態機 + 運行時上下文） |
+| `automation/flow.py` | `ShopFlow` 狀態機主體 + `wait_for`/`wait_for_gone`/`wait_for_stable` 輪詢函數 |
+| `automation/templates.py` | `TemplateManager` 多語言模板加載（語言後綴回退 + 快取） |
+| `detection/matcher.py` | `TemplateMatcher` OpenCV 多尺度模板匹配（替代原 aircv） |
+| `capture/bitblt.py` | BitBlt (GDI) 截圖，`_GDIContext` 確保資源釋放 |
+| `capture/mss_backend.py` | MSS 庫截圖（備用後端） |
+| `input/sendinput.py` | SendInput 滑鼠事件（佔用實體滑鼠，需管理員權限） |
+| `logger.py` | 雙輸出日誌：帶時間戳的日誌檔案 + Qt Signal（GUI 顯示） |
 
-- **截圖**：`capture_window()` 使用桌面 DC + `BitBlt` 複製客戶區域像素（需要視窗可見）
-- **點擊**：`click_at()` / `double_click_at()` 使用 `win32api.mouse_event` 發送實體滑鼠事件（佔用滑鼠）
-- **滑動**：`swipe_at()` 分步模擬滑鼠拖拽，用於滾動商店列表
-- **座標縮放**：`_scale()` 將 1920×1080 參考座標映射到實際視窗大小
+### 狀態機流程
 
-### 管理員提權
+`ShopFlow.run()` 的狀態循環：`SCANNING` → 檢測書籤位置 → `BUYING_COVENANT`/`BUYING_MYSTIC` → `SWIPING`（滾動商店列表）→ `REFRESHING`（消耗 3 天空石刷新）→ 重複。三種停止條件：按聖約次數、按神秘次數、按天空石消耗量。
 
-啟動時通過 `ctypes.windll.shell32.ShellExecuteW(..., "runas", ...)` 自動請求 UAC 提權。
+### 座標系統
 
-### 自動化流程
+所有座標基於 1920×1080 參考解析度（`capture.REF_WIDTH/REF_HEIGHT`）。`InputBackend.scale_coords()` 在運行時映射到實際視窗客戶區大小。模板匹配結果和自動化流程中的座標均為參考解析度座標。
 
-`Worker.run()` 的核心循環：截圖 → 搜索聖約/神秘書籤位置 → 雙擊商品 → 等待購買按鈕出現 → 點擊購買 → 滑動商店列表 → 刷新商店（消耗天空石） → 重複。支持三種停止條件：按聖約次數、按神秘次數、按天空石消耗量。
+### 多語言模板
 
-### 輪詢確認模式
+`img/` 目錄下按語言後綴存放模板圖片（`buyConfirmButton-zh-TW.png`）。`TemplateManager` 優先加載 `{name}-{lang}.png`，不存在時回退到 `{name}.png`。書籤位置模板（`covenantLocation.png`、`mysticLocation.png`）為語言通用。注意：`cv2.imread` 不支持中文路徑，模板加載使用 `np.fromfile` + `cv2.imdecode` 替代。
 
-`wait_for()` 函數提供帶超時的輪詢機制，用於等待按鈕出現/消失，替代固定 `time.sleep`。
+### 截圖後端
 
-### 多語言支持
-
-`img/` 目錄下按語言後綴存放模板圖片（`-zh-TW`、`-zh-CN`、`-en-US`），遊戲語言在 `config.json` 中配置。
+`capture_window()` 支持三種模式（`config.json` 中 `capture_method` 配置）：`auto`（BitBlt 優先，失敗回退 MSS）、`bitblt`、`mss`。所有後端統一輸出 BGR ndarray (1920×1080)。
 
 ## Configuration
 
-`config.json` 字段：
-- `window_title` — 遊戲視窗標題（預設 `"Epic Seven"`）
-- `e7_language` — 遊戲語系（`zh-TW`、`zh-CN`、`en-US`）
-- `foreground_mode` — 保留配置項，目前代碼始終使用前景模式
-- `default_money` / `default_stone` / `default_covenant` / `default_mystic` / `default_stone_usage` — UI 輸入框預設值
+`config.json` 由 `AppConfig` dataclass 管理，新欄位均有默認值，舊版配置文件可直接使用。舊欄位名自動映射（如 `e7_language` → `language`）。關鍵欄位：
 
-## Test Files
-
-`test_*.py` 為獨立的調試/驗證腳本，非單元測試框架，直接 `python test_xxx.py` 執行。
+- `window_title` — 遊戲視窗標題（預設 `"第七史诗"`）
+- `language` — 遊戲語系（`zh-TW`、`zh-CN`、`en-US`）
+- `capture_method` — 截圖方式（`auto`、`bitblt`、`mss`）
+- `input_backend` — 輸入後端（目前僅 `sendinput`）
+- `match_threshold_*` — 各類元素的模板匹配置信度閾值（location=0.9, button=0.85, confirm=0.9, refresh=0.8）
+- `max_retry` — 重試次數上限（預設 20）
+- `swipe_fail_limit` — 連續滑動失敗退出閾值（預設 5）
 
 ## Git
+
 - 提交代码时不要署名
