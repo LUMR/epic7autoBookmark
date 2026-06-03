@@ -11,13 +11,8 @@ import win32ui
 import win32con
 import cv2
 import numpy as np
-from numpy import asarray
 
-from capture import REF_WIDTH, REF_HEIGHT
-
-
-class CaptureError(Exception):
-    """截图失败时抛出的异常。"""
+from capture import REF_WIDTH, REF_HEIGHT, CaptureError
 
 
 class _GDIContext:
@@ -101,7 +96,7 @@ class _GDIContext:
 
         bmp_info = self._bitmap.GetInfo()
         bmp_str = self._bitmap.GetBitmapBits(True)
-        img = asarray(bytearray(bmp_str), dtype="uint8")
+        img = np.asarray(bytearray(bmp_str), dtype="uint8")
         img = img.reshape((bmp_info["bmHeight"], bmp_info["bmWidth"], 4))
         img = img[:, :, :3]  # 去除 alpha 通道
 

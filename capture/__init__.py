@@ -4,7 +4,12 @@
 REF_WIDTH = 1920
 REF_HEIGHT = 1080
 
-from capture.bitblt import capture_bitblt, CaptureError
+
+class CaptureError(Exception):
+    """截图失败时抛出的异常。"""
+
+
+from capture.bitblt import capture_bitblt
 from capture.mss_backend import capture_mss
 
 

@@ -50,18 +50,20 @@ class ShopLogger:
         console_handler.setFormatter(logging.Formatter("%(message)s"))
         self._logger.addHandler(console_handler)
 
+    def _log(self, level: int, msg: str, emit_to_qt: bool = True) -> None:
+        """统一日志输出。"""
+        self._logger.log(level, msg)
+        if emit_to_qt and self._qt_signal:
+            self._qt_signal.emit(msg)
+
     def info(self, msg: str) -> None:
         """记录 INFO 级别日志。"""
-        self._logger.info(msg)
-        if self._qt_signal:
-            self._qt_signal.emit(msg)
+        self._log(logging.INFO, msg)
 
     def error(self, msg: str) -> None:
         """记录 ERROR 级别日志。"""
-        self._logger.error(msg)
-        if self._qt_signal:
-            self._qt_signal.emit(msg)
+        self._log(logging.ERROR, msg)
 
     def debug(self, msg: str) -> None:
         """记录 DEBUG 级别日志（仅写入文件，不发送到 GUI）。"""
-        self._logger.debug(msg)
+        self._log(logging.DEBUG, msg, emit_to_qt=False)

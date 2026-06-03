@@ -9,17 +9,13 @@ import cv2
 import numpy as np
 import win32gui
 
-from capture import REF_WIDTH, REF_HEIGHT
+from capture import REF_WIDTH, REF_HEIGHT, CaptureError
 
 try:
     import mss
     import mss.base
 except ImportError:
     mss = None  # type: ignore[assignment]
-
-
-class CaptureError(Exception):
-    """截图失败时抛出的异常。"""
 
 
 def capture_mss(hwnd: int) -> np.ndarray:

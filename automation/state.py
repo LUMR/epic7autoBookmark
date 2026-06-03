@@ -58,7 +58,6 @@ class ShopContext:
     refresh_count: int = 0
     covenant_bought: int = 0
     mystic_bought: int = 0
-    loop_count: int = 0
 
     # ---- 控制 ----
     _running: bool = True

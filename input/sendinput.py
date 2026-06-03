@@ -15,8 +15,6 @@ import win32con
 
 from input.base import InputBackend
 
-user32 = ctypes.windll.user32
-
 
 class SendInputBackend(InputBackend):
     """通过 SendInput API 发送鼠标事件的输入后端。

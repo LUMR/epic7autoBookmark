@@ -24,8 +24,6 @@ def _make_font(family: str = "微軟正黑體", size: int = 12) -> QtGui.QFont:
 class Ui_Main:
     """主窗口 UI。"""
 
-    start = False
-
     def setupUi(self, Main: QtWidgets.QWidget) -> None:
         # 加载配置获取默认值
         try:
@@ -41,6 +39,7 @@ class Ui_Main:
             }
 
         # 共享字体
+        self.start = False
         font_main = _make_font("微軟正黑體", 12)
         font_log = _make_font("微軟正黑體", 10)
         font_link = _make_font("微軟正黑體", 11)

@@ -1,5 +1,6 @@
 build/
 dist/
+logs/
 debug_*.png
 __pycache__
 main.exe

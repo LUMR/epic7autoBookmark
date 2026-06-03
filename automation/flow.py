@@ -140,21 +140,18 @@ class ShopFlow:
         self._init()
 
         while self.ctx.should_continue:
-            screenshot = capture_window(self.ctx.hwnd)
-            self.ctx.loop_count += 1
-
             state = self.ctx.state
 
             if state == ShopState.SCANNING:
-                self._handle_scanning(screenshot)
+                self._handle_scanning()
             elif state == ShopState.BUYING_COVENANT:
-                self._handle_buying(screenshot)
+                self._handle_buying()
             elif state == ShopState.BUYING_MYSTIC:
-                self._handle_buying(screenshot)
+                self._handle_buying()
             elif state == ShopState.SWIPING:
-                self._handle_swiping(screenshot)
+                self._handle_swiping()
             elif state == ShopState.REFRESHING:
-                self._handle_refreshing(screenshot)
+                self._handle_refreshing()
             elif state == ShopState.DONE or state == ShopState.ERROR:
                 break
 
@@ -198,12 +195,14 @@ class ShopFlow:
 
     # ---- SCANNING：扫描商店 ----
 
-    def _handle_scanning(self, screenshot: np.ndarray) -> None:
+    def _handle_scanning(self) -> None:
         """扫描商店，查找目标书签。"""
         # 先检查是否需要刷新
         if self.ctx.need_refresh:
             self.ctx.state = ShopState.REFRESHING
             return
+
+        screenshot = capture_window(self.ctx.hwnd)
 
         # 检测圣约书签
         if not self.ctx.covenant_found:
@@ -240,7 +239,7 @@ class ShopFlow:
 
     # ---- BUYING：购买书签（统一处理圣约和神秘） ----
 
-    def _handle_buying(self, screenshot: np.ndarray) -> None:
+    def _handle_buying(self) -> None:
         """购买书签的统一流程。
 
         修复 Bug #8：圣约和神秘购买逻辑统一为一个方法。
@@ -328,7 +327,7 @@ class ShopFlow:
 
     # ---- SWIPING：滑动商店列表 ----
 
-    def _handle_swiping(self, screenshot: np.ndarray) -> None:
+    def _handle_swiping(self) -> None:
         """滑动商店列表。
 
         修复 Bug #2：连续滑动失败计数器 + 阈值退出。
@@ -363,12 +362,13 @@ class ShopFlow:
 
     # ---- REFRESHING：刷新商店 ----
 
-    def _handle_refreshing(self, screenshot: np.ndarray) -> None:
+    def _handle_refreshing(self) -> None:
         """刷新商店流程。
 
         修复 Bug #1：wait_for_stable 超时后 break 退出内层循环，
         而非 continue 导致在 retry2 中无效重试。
         """
+        screenshot = capture_window(self.ctx.hwnd)
         refresh_loc = self.matcher.match(
             screenshot, self._tpl_refresh,
             self.config.match_threshold_refresh, "refresh"

@@ -114,10 +114,6 @@ class Worker(QtCore.QThread):
             # 创建并执行流程
             flow = ShopFlow(ctx, templates, matcher, input_backend, logger, config)
 
-            # 连接状态变化的 Signal 回调
-            original_money = ctx.money
-            original_stone = ctx.stone
-
             result = flow.run()
 
             # 更新 UI 显示的最终数值
