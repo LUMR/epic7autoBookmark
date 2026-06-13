@@ -15,6 +15,7 @@ from automation.flow import ShopFlow
 from automation.state import ShopContext, ShopState
 from automation.templates import TemplateManager
 from capture import REF_WIDTH, REF_HEIGHT
+from capture.bitblt import close_all
 from config import AppConfig
 from detection.matcher import TemplateMatcher
 from input import create_backend
@@ -102,6 +103,7 @@ class Worker(QtCore.QThread):
                 expect_num=self.expectNum,
                 money=self.moneyNum,
                 stone=self.stoneNum,
+                capture_method=config.capture_method,
             )
             self._ctx = ctx
             self._running = True
@@ -126,5 +128,6 @@ class Worker(QtCore.QThread):
             self.emitLog.emit(f"錯誤: {e}")
             self.isError.emit()
         finally:
+            close_all()
             self._ctx = None
             self._running = False
