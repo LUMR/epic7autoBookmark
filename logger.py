@@ -24,10 +24,18 @@ class ShopLogger:
         self._logger = logging.getLogger("epic7")
         self._logger.setLevel(logging.DEBUG)
 
-        # 避免重复添加 handler
-        if not self._logger.handlers:
-            self._setup_file_handler(log_dir)
-            self._setup_console_handler()
+        # 每次實例化都重建 handler，確保新 run 寫入新檔案（修復 handler 復用 bug）
+        self._clear_handlers()
+        self._setup_file_handler(log_dir)
+        self._setup_console_handler()
+
+    @staticmethod
+    def _clear_handlers() -> None:
+        """清空並關閉舊 handler，避免日誌寫入上一次執行的檔案。"""
+        logger = logging.getLogger("epic7")
+        for handler in logger.handlers[:]:
+            logger.removeHandler(handler)
+            handler.close()
 
     def _setup_file_handler(self, log_dir: str) -> None:
         """创建带时间戳的文件日志。"""
