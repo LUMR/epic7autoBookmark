@@ -137,7 +137,8 @@ class ShopFlow:
 
     def short_sleep(self, multiplier: float = 1.0) -> None:
         """帶隨機抖動的延遲，時長 = config.short_sleep_base * multiplier + 抖動。"""
-        time.sleep(self.config.short_sleep_base * multiplier + random.uniform(-0.2, 0.3))
+        delay = self.config.short_sleep_base * multiplier + random.uniform(-0.2, 0.3)
+        time.sleep(max(0.0, delay))  # 防禦負值（base 過小時抖動可能為負）
 
     # ---- 點擊輔助（抽象重複的「點擊-等待」流程）----
 
