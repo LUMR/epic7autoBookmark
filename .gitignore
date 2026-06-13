@@ -4,7 +4,7 @@ logs/
 debug_*.png
 __pycache__
 main.exe
-test_*.py
-test_*.png
+/test_*.py
+/test_*.png
 desktop.ini
 main.exe

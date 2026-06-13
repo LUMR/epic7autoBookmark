@@ -38,6 +38,10 @@ class AppConfig:
     match_threshold_confirm: float = 0.9
     match_threshold_refresh: float = 0.8
 
+    # ---- ROI 搜寻区域（可选加速，参考解析度 [x, y, w, h]，None=全图）----
+    scan_roi: list[int] | None = None       # 书签扫描区域
+    button_roi: list[int] | None = None     # 按钮搜寻区域
+
     # ---- 时序参数 ----
     short_sleep_base: float = 1.0
     wait_timeout: float = 5.0
@@ -119,6 +123,16 @@ class AppConfig:
             "mystic": str(self.default_mystic),
             "stone_usage": str(self.default_stone_usage),
         }
+
+    @property
+    def scan_roi_tuple(self) -> tuple[int, int, int, int] | None:
+        """书签扫描 ROI，转为 matcher 需要的 tuple。"""
+        return tuple(self.scan_roi) if self.scan_roi else None
+
+    @property
+    def button_roi_tuple(self) -> tuple[int, int, int, int] | None:
+        """按钮搜寻 ROI，转为 matcher 需要的 tuple。"""
+        return tuple(self.button_roi) if self.button_roi else None
 
 
 def _coerce(value: Any, type_hint: str) -> Any:
