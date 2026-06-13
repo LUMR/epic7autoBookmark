@@ -307,6 +307,11 @@ class Ui_Main:
 
     def _handle_start(self) -> None:
         """处理开始按钮点击。"""
+        if self.worker.isRunning():
+            self.logTextBrowser.append("上一次任務仍在收尾，請稍候再試")
+            self.start = not self.start   # 還原切換
+            return
+
         startMode = 0
         expectNum = 0
 
@@ -371,9 +376,13 @@ class Ui_Main:
     def _handle_stop(self) -> None:
         """处理停止按钮点击。使用 worker.stop() 替代 terminate()。"""
         self.worker.stop()       # Bug #3 修复：优雅停止
-        self.worker.wait(5000)
-        self.logTextBrowser.append("===== 停止 =====")
-        self.startProperty(False)
+        if self.worker.wait(5000):
+            self.logTextBrowser.append("===== 停止 =====")
+            self.start = False
+            self.startProperty(False)
+        else:
+            # 逾時：線程仍在收尾，保持禁用；線程結束後 isFinish/isError 信號會恢復 UI
+            self.logTextBrowser.append("停止逾時，線程仍在收尾，請稍候...")
 
     def startProperty(self, isDisabled: bool) -> None:
         if isDisabled:
