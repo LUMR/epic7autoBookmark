@@ -8,6 +8,13 @@ from __future__ import annotations
 from enum import Enum, auto
 from dataclasses import dataclass, field
 
+from constants import (
+    COVENANT_COST,
+    MYSTIC_COST,
+    REFRESH_STONE_COST,
+    min_money_for_mode,
+)
+
 
 class ShopState(Enum):
     """商店自动化的状态枚举。"""
@@ -43,6 +50,7 @@ class ShopContext:
     expect_num: int
     money: int
     stone: int
+    capture_method: str = "auto"  # 截图方式（auto/bitblt/mss）
 
     # ---- 状态机 ----
     state: ShopState = ShopState.SCANNING
@@ -68,10 +76,11 @@ class ShopContext:
 
         修复 Bug #4（天空石超支）：模式 3 时 expect_num 可能为负数，
         改为 expect_num >= 3 才继续。
+        金币阈值按模式区分：圣约 184000，神秘/天空石 280000。
         """
         if not self._running:
             return False
-        if self.money <= 280000:
+        if self.money <= min_money_for_mode(self.mode):
             return False
         if self.mode == 3:
             # 天空石模式：剩余数量足够再刷新一次
@@ -86,8 +95,8 @@ class ShopContext:
 
     @property
     def total_stone_used(self) -> int:
-        return self.refresh_count * 3
+        return self.refresh_count * REFRESH_STONE_COST
 
     @property
     def total_money_used(self) -> int:
-        return self.covenant_bought * 184000 + self.mystic_bought * 280000
+        return self.covenant_bought * COVENANT_COST + self.mystic_bought * MYSTIC_COST
