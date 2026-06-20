@@ -12,12 +12,9 @@ from PyQt6 import QtCore
 from automation.flow import ShopFlow
 from automation.state import ShopContext, ShopState
 from automation.templates import TemplateManager
-from capture import REF_WIDTH, REF_HEIGHT
-from capture.bitblt import close_all
 from config import AppConfig
 from detection.matcher import TemplateMatcher
-from device.windows import find_game_window
-from input import create_backend
+from device import create_device, DeviceError
 from logger import ShopLogger
 
 
@@ -65,20 +62,20 @@ class Worker(QtCore.QThread):
             # 创建日志器
             logger = ShopLogger(self.emitLog)
 
-            # 查找游戏窗口
-            hwnd = find_game_window(config.window_title)
-            if not hwnd:
-                logger.error("錯誤: 找不到遊戲視窗")
-                raise RuntimeError("game window not found")
+            # 建立設備(Windows:查找視窗;ADB:連線/選設備)
+            try:
+                device = create_device(config)
+            except DeviceError as e:
+                logger.error(f"錯誤: {e}")
+                raise
 
             # 创建上下文
             ctx = ShopContext(
-                hwnd=hwnd,
+                device=device,
                 mode=self.startMode,
                 expect_num=self.expectNum,
                 money=self.moneyNum,
                 stone=self.stoneNum,
-                capture_method=config.capture_method,
             )
             self._ctx = ctx
             self._running = True
@@ -86,10 +83,9 @@ class Worker(QtCore.QThread):
             # 初始化组件
             templates = TemplateManager(config.language)
             matcher = TemplateMatcher()
-            input_backend = create_backend(config.input_backend)
 
             # 创建并执行流程
-            flow = ShopFlow(ctx, templates, matcher, input_backend, logger, config)
+            flow = ShopFlow(ctx, templates, matcher, device, logger, config)
 
             result = flow.run()
 
@@ -103,6 +99,7 @@ class Worker(QtCore.QThread):
             self.emitLog.emit(f"錯誤: {e}")
             self.isError.emit()
         finally:
-            close_all()
+            if self._ctx is not None and self._ctx.device is not None:
+                self._ctx.device.close()
             self._ctx = None
             self._running = False
