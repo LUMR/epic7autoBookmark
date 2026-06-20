@@ -11,12 +11,10 @@ import time
 
 import cv2
 import numpy as np
-import win32gui
 
-from capture import capture_window
 from config import AppConfig
 from detection.matcher import TemplateMatcher
-from input.base import InputBackend
+from device.base import DeviceBackend
 from automation.state import ShopContext, ShopState, BookmarkTarget
 from automation.templates import TemplateManager
 from logger import ShopLogger
@@ -50,7 +48,7 @@ def wait_for(
         if not ctx._running:
             return None
         time.sleep(interval)
-        img = capture_window(ctx.hwnd, ctx.capture_method)
+        img = ctx.device.capture()
         result = matcher.match(img, template, threshold, name, roi=roi)
         if result is not None:
             return result
@@ -73,7 +71,7 @@ def wait_for_gone(
         if not ctx._running:
             return True
         time.sleep(interval)
-        img = capture_window(ctx.hwnd, ctx.capture_method)
+        img = ctx.device.capture()
         if matcher.match(img, template, threshold, name, roi=roi) is None:
             return True
     return False
@@ -92,12 +90,12 @@ def wait_for_stable(
     連續兩次截圖差異小於閾值，且與刷新前不同，則視為穩定。
     """
     deadline = time.time() + timeout
-    prev = capture_window(ctx.hwnd, ctx.capture_method)
+    prev = ctx.device.capture()
     while time.time() < deadline:
         if not ctx._running:
             return False
         time.sleep(interval)
-        curr = capture_window(ctx.hwnd, ctx.capture_method)
+        curr = ctx.device.capture()
         if cv2.absdiff(prev, curr).mean() < threshold:
             if before_img is not None and cv2.absdiff(before_img, curr).mean() < before_threshold:
                 prev = curr
@@ -115,14 +113,14 @@ class ShopFlow:
         ctx: ShopContext,
         templates: TemplateManager,
         matcher: TemplateMatcher,
-        input_backend: InputBackend,
+        device: DeviceBackend,
         logger: ShopLogger,
         config: AppConfig,
     ):
         self.ctx = ctx
         self.templates = templates
         self.matcher = matcher
-        self.input = input_backend
+        self.device = device
         self.log = logger
         self.config = config
 
@@ -145,13 +143,12 @@ class ShopFlow:
     def _click_until_found(self, ref_pos, tpl, threshold, name, max_retry=None):
         """點擊 ref_pos 直到 tpl 出現。回傳 MatchResult 或 None（重試耗盡）。"""
         max_retry = self.config.max_retry if max_retry is None else max_retry
-        cx, cy = self.input.scale_coords(self.ctx.hwnd, *ref_pos)
         for i in range(max_retry):
             if not self.ctx._running:
                 return None
             self.short_sleep(0.5)
-            self.log.debug(f"點擊{name} ({cx:.0f},{cy:.0f}) 重試:{i+1}")
-            self.input.double_click(self.ctx.hwnd, cx, cy)
+            self.log.debug(f"點擊{name} {ref_pos} 重試:{i+1}")
+            self.device.double_click(*ref_pos)
             result = wait_for(
                 self.ctx, self.matcher, tpl, threshold, name,
                 timeout=self.config.wait_timeout,
@@ -166,13 +163,12 @@ class ShopFlow:
     def _click_until_gone(self, ref_pos, tpl, threshold, name, timeout=None):
         """點擊 ref_pos 直到 tpl 消失。回傳 True=消失，False=重試耗盡。"""
         timeout = self.config.wait_timeout if timeout is None else timeout
-        cx, cy = self.input.scale_coords(self.ctx.hwnd, *ref_pos)
         for i in range(self.config.max_retry):
             if not self.ctx._running:
                 return True
             self.short_sleep(0.3)
-            self.log.debug(f"點擊{name} ({cx:.0f},{cy:.0f}) 重試:{i+1}")
-            self.input.double_click(self.ctx.hwnd, cx, cy)
+            self.log.debug(f"點擊{name} {ref_pos} 重試:{i+1}")
+            self.device.double_click(*ref_pos)
             if wait_for_gone(
                 self.ctx, self.matcher, tpl, threshold, name,
                 timeout=timeout, roi=self.config.button_roi_tuple,
@@ -224,10 +220,7 @@ class ShopFlow:
         self.log.info("正在尋找遊戲視窗......")
         self.short_sleep(0.5)
 
-        try:
-            win32gui.SetForegroundWindow(self.ctx.hwnd)
-        except Exception:
-            pass  # 視窗可能已在前台
+        self.device.prepare()
         self.short_sleep(0.5)
 
         self.log.info("遊戲視窗已找到")
@@ -245,7 +238,7 @@ class ShopFlow:
             self.ctx.state = ShopState.REFRESHING
             return
 
-        screenshot = capture_window(self.ctx.hwnd, self.ctx.capture_method)
+        screenshot = self.ctx.device.capture()
         scan_roi = self.config.scan_roi_tuple
 
         if not self.ctx.covenant_found:
@@ -334,16 +327,14 @@ class ShopFlow:
         self.log.info("滑動商店列表")
         self.short_sleep(0.3)
 
-        before = capture_window(self.ctx.hwnd, self.ctx.capture_method)
+        before = self.ctx.device.capture()
 
-        sx1, sy1 = self.input.scale_coords(self.ctx.hwnd, *SWIPE_START_REF)
-        sx2, sy2 = self.input.scale_coords(self.ctx.hwnd, *SWIPE_END_REF)
-        self.input.swipe(self.ctx.hwnd, sx1, sy1, sx2, sy2, SWIPE_DURATION)
+        self.device.swipe(*SWIPE_START_REF, *SWIPE_END_REF, SWIPE_DURATION)
         self.ctx.need_refresh = True
 
         self.short_sleep(1.0)
 
-        after = capture_window(self.ctx.hwnd, self.ctx.capture_method)
+        after = self.ctx.device.capture()
         changed = cv2.absdiff(before, after).mean() > SWIPE_CHANGED_DIFF
 
         if not changed:
@@ -362,7 +353,7 @@ class ShopFlow:
 
     def _handle_refreshing(self) -> None:
         """刷新商店流程。"""
-        screenshot = capture_window(self.ctx.hwnd, self.ctx.capture_method)
+        screenshot = self.ctx.device.capture()
         refresh_loc = self.matcher.match(
             screenshot, self._tpl_refresh,
             self.config.match_threshold_refresh, "refresh",
@@ -378,7 +369,7 @@ class ShopFlow:
             self.ctx.state = ShopState.SCANNING
             return
 
-        before_refresh = capture_window(self.ctx.hwnd, self.ctx.capture_method)
+        before_refresh = self.ctx.device.capture()
         rx, ry = refresh_loc.center
 
         for retry in range(self.config.max_retry):
@@ -386,9 +377,8 @@ class ShopFlow:
                 return
             self.short_sleep(0.5)
 
-            srx, sry = self.input.scale_coords(self.ctx.hwnd, rx, ry)
-            self.log.debug(f"點擊刷新按鈕 ({srx:.0f},{sry:.0f}) 重試:{retry+1}")
-            self.input.double_click(self.ctx.hwnd, srx, sry)
+            self.log.debug(f"點擊刷新按鈕 {(rx, ry)} 重試:{retry+1}")
+            self.device.double_click(rx, ry)
 
             # 等待確認對話框
             yes_btn = wait_for(

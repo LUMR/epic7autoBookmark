@@ -1,8 +1,9 @@
+from unittest.mock import MagicMock
 from automation.state import ShopContext
 
 
 def _ctx(mode=1, money=10**8, stone=100, expect_num=5, **kw):
-    return ShopContext(hwnd=1, mode=mode, expect_num=expect_num,
+    return ShopContext(device=MagicMock(), mode=mode, expect_num=expect_num,
                        money=money, stone=stone, **kw)
 
 
@@ -26,7 +27,6 @@ def test_should_continue_mode3_budget():
 
 
 def test_should_continue_stone_for_refresh():
-    # 聖約模式：天空石 <3 無法刷新 → 停止
     assert _ctx(mode=1, stone=2).should_continue is False
 
 
@@ -43,6 +43,7 @@ def test_total_stone_used():
     assert c.total_stone_used == 12
 
 
-def test_capture_method_default():
-    assert _ctx().capture_method == "auto"
-    assert _ctx(capture_method="mss").capture_method == "mss"
+def test_ctx_holds_device():
+    dev = MagicMock()
+    c = ShopContext(device=dev, mode=1, expect_num=1, money=10**8, stone=100)
+    assert c.device is dev

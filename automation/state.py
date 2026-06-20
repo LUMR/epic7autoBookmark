@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from enum import Enum, auto
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
 
 from constants import (
     COVENANT_COST,
@@ -14,6 +15,9 @@ from constants import (
     REFRESH_STONE_COST,
     min_money_for_mode,
 )
+
+if TYPE_CHECKING:
+    from device.base import DeviceBackend
 
 
 class ShopState(Enum):
@@ -42,15 +46,14 @@ class ShopContext:
     集中管理所有状态，方便在状态处理器之间传递。
     """
 
-    # ---- 窗口信息 ----
-    hwnd: int
+    # ---- 设备 ----
+    device: "DeviceBackend"
 
     # ---- 用户参数 ----
     mode: int  # 1=圣约, 2=神秘, 3=天空石
     expect_num: int
     money: int
     stone: int
-    capture_method: str = "auto"  # 截图方式（auto/bitblt/mss）
 
     # ---- 状态机 ----
     state: ShopState = ShopState.SCANNING
