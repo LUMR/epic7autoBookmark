@@ -1,13 +1,27 @@
 """第七史詩刷商店小工具 — 入口。
 
-自动请求管理员权限后启动 PyQt6 GUI。
+僅 Windows 原生模式(SendInput)需要管理員權限;ADB 模式為使用者級,跳過提權。
+提權在導入 win32 之前執行,故以純 json 讀 config.json 判斷 platform(不依賴 pywin32)。
 """
 
 import ctypes
+import json
 import sys
+from pathlib import Path
 
-# 管理员提权（需要在导入 win32 之前执行）
-if not ctypes.windll.shell32.IsUserAnAdmin():
+
+def _needs_admin() -> bool:
+    """僅 Windows 原生模式需管理員;讀取失敗時保守提權。"""
+    try:
+        if Path("config.json").exists():
+            raw = json.loads(Path("config.json").read_text(encoding="utf-8"))
+            return raw.get("platform", "windows") == "windows"
+    except Exception:
+        pass
+    return True
+
+
+if _needs_admin() and not ctypes.windll.shell32.IsUserAnAdmin():
     params = ' '.join([f'"{a}"' if ' ' in a else a for a in sys.argv])
     exe = sys.executable.replace("python.exe", "pythonw.exe")
     ctypes.windll.shell32.ShellExecuteW(None, "runas", exe, params, None, 1)
