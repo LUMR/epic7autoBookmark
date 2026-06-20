@@ -13,6 +13,8 @@ from typing import Any
 _VALID_LANGUAGES = ("zh-TW", "zh-CN", "en-US")
 _VALID_CAPTURE_METHODS = ("auto", "bitblt", "mss")
 _VALID_INPUT_BACKENDS = ("sendinput",)
+_VALID_PLATFORMS = ("windows", "adb")
+_VALID_ADB_SCREENSHOT_METHODS = ("screencap",)
 
 
 @dataclass
@@ -24,6 +26,13 @@ class AppConfig:
     language: str = "zh-TW"
     capture_method: str = "auto"
     input_backend: str = "sendinput"
+
+    # ---- 平台 ----
+    platform: str = "windows"                  # windows / adb
+    adb_path: str | None = None                # None = 用 PATH
+    adb_serial: str | None = None              # None = 自動取唯一設備
+    adb_connect: str | None = None             # 如 "127.0.0.1:7555";None=不 connect
+    adb_screenshot_method: str = "screencap"   # 預留擴展點
 
     # ---- UI 默认值 ----
     default_money: int = 100000000
@@ -99,6 +108,14 @@ class AppConfig:
         if self.input_backend not in _VALID_INPUT_BACKENDS:
             warnings.append(
                 f"不支持的输入后端: {self.input_backend}，可选: {_VALID_INPUT_BACKENDS}"
+            )
+        if self.platform not in _VALID_PLATFORMS:
+            warnings.append(
+                f"不支持的平台: {self.platform}，可选: {_VALID_PLATFORMS}"
+            )
+        if self.adb_screenshot_method not in _VALID_ADB_SCREENSHOT_METHODS:
+            warnings.append(
+                f"不支持的 ADB 截图方式: {self.adb_screenshot_method}，可选: {_VALID_ADB_SCREENSHOT_METHODS}"
             )
         return warnings
 
