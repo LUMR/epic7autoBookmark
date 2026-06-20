@@ -7,8 +7,6 @@ terminate() 在 Windows 上调用 TerminateThread，不会执行 finally 块，
 
 from __future__ import annotations
 
-import win32gui
-
 from PyQt6 import QtCore
 
 from automation.flow import ShopFlow
@@ -18,32 +16,9 @@ from capture import REF_WIDTH, REF_HEIGHT
 from capture.bitblt import close_all
 from config import AppConfig
 from detection.matcher import TemplateMatcher
+from device.windows import find_game_window
 from input import create_backend
 from logger import ShopLogger
-
-
-def find_game_window(window_title: str) -> int | None:
-    """查找游戏窗口句柄。
-
-    Args:
-        window_title: 窗口标题关键字。
-
-    Returns:
-        窗口句柄 (HWND)，未找到返回 None。
-    """
-    candidates: list[tuple[int, int]] = []
-
-    def callback(hwnd, _):
-        if win32gui.IsWindowVisible(hwnd) and window_title in win32gui.GetWindowText(hwnd):
-            rect = win32gui.GetClientRect(hwnd)
-            area = rect[2] * rect[3]
-            candidates.append((area, hwnd))
-
-    win32gui.EnumWindows(callback, None)
-    if not candidates:
-        return None
-    candidates.sort(reverse=True)
-    return candidates[0][1]
 
 
 class Worker(QtCore.QThread):

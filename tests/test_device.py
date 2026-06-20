@@ -14,6 +14,7 @@ from device.base import (
     scale_ref_to_device,
     select_serial,
 )
+from device.windows import WindowsDeviceBackend
 
 
 def test_parse_wm_size():
@@ -229,3 +230,49 @@ def test_adb_device_invalid_resolution_raises(monkeypatch):
     client.wm_size.return_value = (0, 0)
     with pytest.raises(DeviceError):
         AdbDeviceBackend(client)
+
+
+def test_windows_device_click_delegates(monkeypatch):
+    monkeypatch.setattr("device.windows.scale_to_client", lambda hwnd, x, y: (x * 2, y * 2))
+    fake_input = MagicMock()
+    monkeypatch.setattr("device.windows.SendInputBackend", lambda: fake_input)
+
+    dev = WindowsDeviceBackend(hwnd=42, capture_method="bitblt")
+    dev.double_click(100, 50)
+
+    assert fake_input.double_click.call_count == 1
+    args = fake_input.double_click.call_args[0]
+    assert args[0] == 42          # hwnd 透傳
+    assert args[1] == 200 and args[2] == 100   # scale_to_client 後座標
+
+
+def test_windows_device_capture_delegates(monkeypatch):
+    expected = np.zeros((1080, 1920, 3), dtype=np.uint8)
+    monkeypatch.setattr("device.windows.capture_window", lambda hwnd, m: expected)
+    monkeypatch.setattr("device.windows.SendInputBackend", lambda: MagicMock())
+    dev = WindowsDeviceBackend(hwnd=1, capture_method="bitblt")
+    assert dev.capture() is expected
+
+
+def test_windows_device_close_calls_close_all(monkeypatch):
+    called = {"n": 0}
+    monkeypatch.setattr("device.windows.close_all", lambda: called.__setitem__("n", called["n"] + 1))
+    monkeypatch.setattr("device.windows.SendInputBackend", lambda: MagicMock())
+    WindowsDeviceBackend(hwnd=1).close()
+    assert called["n"] == 1
+
+
+def test_windows_device_swipe_delegates(monkeypatch):
+    monkeypatch.setattr("device.windows.scale_to_client", lambda hwnd, x, y: (x * 2, y * 2))
+    fake_input = MagicMock()
+    monkeypatch.setattr("device.windows.SendInputBackend", lambda: fake_input)
+
+    dev = WindowsDeviceBackend(hwnd=42, capture_method="bitblt")
+    dev.swipe(100, 50, 200, 60, duration=0.3)
+
+    fake_input.swipe.assert_called_once()
+    args = fake_input.swipe.call_args[0]
+    assert args[0] == 42          # hwnd 透傳
+    assert args[1] == 200 and args[2] == 100    # (100,50) 縮放後
+    assert args[3] == 400 and args[4] == 120    # (200,60) 縮放後
+    assert args[5] == 0.3         # duration 透傳
