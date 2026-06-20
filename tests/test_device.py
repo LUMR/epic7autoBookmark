@@ -1,8 +1,11 @@
 """device 層測試 — 純函數解析/縮放 + factory + 後端委派。"""
 import subprocess
 
+import numpy as np
 import pytest
+from unittest.mock import MagicMock
 
+from device.adb import AdbDeviceBackend
 from device.adb_client import AdbClient
 from device.base import (
     DeviceError,
@@ -159,3 +162,70 @@ def test_adb_client_timeout_raises(monkeypatch):
     monkeypatch.setattr("device.adb_client.subprocess.run", slow)
     with pytest.raises(DeviceError):
         client.tap(1, 2)
+
+
+def _png_bytes_of(shape=(720, 1280, 3)):
+    """產生一張固定位元 PNG bytes,供 capture 測試。"""
+    import cv2
+    img = (np.zeros(shape, dtype=np.uint8) + 7)  # 非零灰階
+    ok, buf = cv2.imencode(".png", img)
+    assert ok
+    return buf.tobytes()
+
+
+def _adb_device(monkeypatch, wm="Physical size: 1280x720"):
+    client = MagicMock()
+    client.wm_size.return_value = parse_wm_size(wm)
+    return AdbDeviceBackend(client), client
+
+
+def test_adb_device_capture_resizes_to_1080p(monkeypatch):
+    dev, client = _adb_device(monkeypatch)
+    client.exec_out.return_value = _png_bytes_of((720, 1280, 3))
+    img = dev.capture()
+    assert img.shape == (1080, 1920, 3)
+
+
+def test_adb_device_click_scales(monkeypatch):
+    dev, client = _adb_device(monkeypatch, "Physical size: 1280x720")
+    dev.click(960, 540)
+    client.tap.assert_called_once_with(640, 360)
+
+
+def test_adb_device_swipe_converts_duration_to_ms(monkeypatch):
+    dev, client = _adb_device(monkeypatch, "Physical size: 1920x1080")
+    dev.swipe(100, 200, 100, 800, duration=0.3)
+    client.swipe.assert_called_once_with(100, 200, 100, 800, 300)
+
+
+def test_adb_device_double_click_two_taps(monkeypatch):
+    dev, client = _adb_device(monkeypatch, "Physical size: 1920x1080")
+    dev.double_click(960, 540)
+    assert client.tap.call_count == 2
+
+
+def test_adb_device_capture_no_resize_at_1080p(monkeypatch):
+    """設備為 1920×1080 時 capture 不應呼叫 resize。"""
+    dev, client = _adb_device(monkeypatch, "Physical size: 1920x1080")
+    client.exec_out.return_value = _png_bytes_of((1080, 1920, 3))
+    spy = MagicMock()
+    monkeypatch.setattr("device.adb.cv2.resize", spy)
+    img = dev.capture()
+    assert img.shape == (1080, 1920, 3)
+    spy.assert_not_called()
+
+
+def test_adb_device_capture_decode_failure_raises(monkeypatch):
+    """adb screencap 回傳無效 bytes(imdecode 得 None)應拋 DeviceError。"""
+    dev, client = _adb_device(monkeypatch)
+    client.exec_out.return_value = b""
+    with pytest.raises(DeviceError):
+        dev.capture()
+
+
+def test_adb_device_invalid_resolution_raises(monkeypatch):
+    """wm_size 解析出無效解析度(w/h<=0)應在建構時拋 DeviceError。"""
+    client = MagicMock()
+    client.wm_size.return_value = (0, 0)
+    with pytest.raises(DeviceError):
+        AdbDeviceBackend(client)
