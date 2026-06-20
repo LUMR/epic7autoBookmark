@@ -5,6 +5,7 @@ import numpy as np
 import pytest
 from unittest.mock import MagicMock
 
+from device import create_device
 from device.adb import AdbDeviceBackend
 from device.adb_client import AdbClient
 from device.base import (
@@ -276,3 +277,35 @@ def test_windows_device_swipe_delegates(monkeypatch):
     assert args[1] == 200 and args[2] == 100    # (100,50) 縮放後
     assert args[3] == 400 and args[4] == 120    # (200,60) 縮放後
     assert args[5] == 0.3         # duration 透傳
+
+
+def test_create_device_windows(monkeypatch):
+    monkeypatch.setattr("device.WindowsDeviceBackend", lambda hwnd, capture_method="auto": ("win", hwnd, capture_method))
+    monkeypatch.setattr("device.find_game_window", lambda title: 999)
+    cfg = MagicMock(); cfg.platform = "windows"; cfg.window_title = "X"; cfg.capture_method = "bitblt"
+    dev = create_device(cfg)
+    assert dev == ("win", 999, "bitblt")
+
+
+def test_create_device_windows_no_window_raises(monkeypatch):
+    monkeypatch.setattr("device.find_game_window", lambda title: None)
+    cfg = MagicMock(); cfg.platform = "windows"; cfg.window_title = "X"
+    with pytest.raises(DeviceError):
+        create_device(cfg)
+
+
+def test_create_device_adb(monkeypatch):
+    built = {}
+    monkeypatch.setattr("device.AdbDeviceBackend", lambda client: built.setdefault("client", client))
+    fake_client = object()
+    monkeypatch.setattr("device.AdbClient", lambda **kw: fake_client)
+    cfg = MagicMock()
+    cfg.platform = "adb"; cfg.adb_path = None; cfg.adb_connect = None; cfg.adb_serial = None
+    dev = create_device(cfg)
+    assert built["client"] is fake_client
+
+
+def test_create_device_unknown_platform_raises():
+    cfg = MagicMock(); cfg.platform = "ios"
+    with pytest.raises(DeviceError):
+        create_device(cfg)
