@@ -6,6 +6,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 第七史詩 (Epic Seven) 自動刷商店工具，支援兩種操作模式並可經 `config.json` 切換：**Windows 模式**（BitBlt/MSS 截圖 + SendInput 滑鼠，操作 PC 遊戲視窗）與 **ADB 模式**（操作安卓模擬器/真機，免管理員、不佔用實體滑鼠）。兩種模式透過統一的 `DeviceBackend` 抽象隔離平台差異，上層用 OpenCV 模板匹配自動在秘密商店中尋找並購買聖約書籤和神秘書籤。
 
+> 📌 `README.md` 面向終端使用者（安裝/使用/設定簡介），本檔面向開發（完整架構與模組細節）。兩者如有出入，以本檔（CLAUDE.md）為準。
+
 ## Build & Run
 
 - **執行**: `python main.py`（Windows 模式自動提權；ADB 模式免管理員。依 `config.json` 的 `platform` 決定）
@@ -15,7 +17,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Test Files
 
-- `tests/` — pytest 單元/整合測試，執行 `pytest`。涵蓋 matcher、config、state、logger、coords、constants、flow 等純邏輯層；IO/GUI 層靠手動驗證。
+- `tests/` — pytest 單元/整合測試，涵蓋 matcher、config、state、logger、coords、constants、flow、device、fakes、capture 等純邏輯層；IO/GUI 層靠手動驗證。執行全部：`pytest`；單一檔案：`pytest tests/test_config.py`；單一測試：`pytest tests/test_device.py::TestClass::test_method`。`fakes.py` 提供 `FakeDevice` 測試替身（device/flow 測試專用）。
 - `tools/roi_helper.py` — 互動式框選商店區域，產出 `config.json` 的 ROI 座標 `[x,y,w,h]`。
 
 ## Architecture
@@ -67,9 +69,19 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 所有後端 `capture()` 恆輸出 BGR ndarray (1920×1080)；點擊吃參考解析度座標，由後端內部縮放。`capture/` 與 `input/` 套件為 Windows 後端所用，上層不再直接呼叫。
 
+### 其他目錄
+
+- `docs/superpowers/{plans,specs}/` — 設計文檔與實施計劃（如 ADB 模式設計/計劃），為架構決策來源，遇疑問可查。
+- `legacy/` — 已歸檔的舊實驗腳本（`test_postmessage.py`、`test_printwindow.py` 等，對應早期 PostMessage/PrintWindow 方案）。**非活躍代碼，勿修改或當作參考實作。**
+- `img/` — 模板圖片（詳見「多語言模板」）。執行 `main.exe` / `python main.py` 時需與 `config.json` 同目錄。
+
 ## Configuration
 
-`config.json` 由 `AppConfig` dataclass 管理，新欄位均有默認值，舊版配置文件可直接使用。舊欄位名自動映射（如 `e7_language` → `language`）。關鍵欄位：
+`config.json` 由 `AppConfig` dataclass 管理，新欄位均有默認值，舊版配置文件可直接使用。舊欄位名自動映射（如 `e7_language` → `language`；`foreground_mode` 為已廢棄欄位，會被忽略）。
+
+> ⚠️ **倉庫隨附的 `config.json` 本身仍是舊版**（僅含 `e7_language`/`foreground_mode`/`default_*`，未含 `platform`/`capture_method`/`adb_*` 等新欄位）—— 這**不是 bug**：靠默認值與別名映射即可正常運行，預設即純 Windows 模式（`platform=windows`）。要啟用 ADB 模式，需自行加入 `platform: "adb"` 與相關 `adb_*` 欄位。
+
+關鍵欄位：
 
 - `window_title` — 遊戲視窗標題（預設 `"第七史诗"`）
 - `language` — 遊戲語系（`zh-TW`、`zh-CN`、`en-US`）
