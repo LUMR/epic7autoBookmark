@@ -45,6 +45,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 | `device/windows.py` | `WindowsDeviceBackend`（組合 capture+input+scale_to_client）+ `find_game_window` |
 | `device/adb_client.py` | `AdbClient`：adb 子進程封裝（路徑定位、connect、devices、exec-out screencap、input tap/swipe） |
 | `device/adb.py` | `AdbDeviceBackend`：ADB 模式後端（screencap 截圖 + 縮放點擊） |
+| `device/humanize.py` | 人性化純函數(jitter/bezier/ease/random_gap/roll)+ `HumanizeSettings` dataclass,兩後端與 flow 共用 |
 | `device/__init__.py` | `create_device(config)` 工廠：依 `platform` 建立 Windows/ADB 後端 |
 | `logger.py` | 雙輸出日誌：帶時間戳的日誌檔案 + Qt Signal（GUI 顯示） |
 
@@ -68,6 +69,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **ADB 模式** (`platform=adb`)：`AdbDeviceBackend` 透過 `AdbClient` 呼叫 adb（`exec-out screencap` 截圖、`input tap/swipe` 輸入）。`adb_screenshot_method` 為預留擴展點（目前 `screencap`）。
 
 所有後端 `capture()` 恆輸出 BGR ndarray (1920×1080)；點擊吃參考解析度座標，由後端內部縮放。`capture/` 與 `input/` 套件為 Windows 後端所用，上層不再直接呼叫。
+
+### 人性化（降低機器特徵）
+
+點擊/滑動的位置抖動、軌跡與時序隨機化由各後端吸收（共用純函數集中於 `device/humanize.py`），flow 僅負責節奏（`short_sleep` 抖動擴大 + 主循環 `maybe_pause`）。Windows 後端生成貝茲曲線游標軌跡 + 加減速；ADB 後端務實方案（位置/起終點抖動 + 時序隨機，軌跡維持系統直線）。`humanize_enabled=false` 可完全關閉、位元級退回舊行為。
 
 ### 其他目錄
 
@@ -95,6 +100,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - `short_sleep_base` / `wait_timeout` / `wait_timeout_long` — 時序參數（預設 1.0 / 5.0 / 8.0 秒）
 - `max_retry` — 重試次數上限（預設 20）
 - `swipe_fail_limit` — 連續滑動失敗退出閾值（預設 5）
+- `humanize_enabled` — 人性化(降低機器特徵)總開關,預設 `true`;`false` 位元級退回舊行為
+- `humanize_jitter_px` / `humanize_swipe_jitter_px` — 點擊/滑動起終點的位置抖動半徑(參考解析度 px)
+- `humanize_curve_strength` / `humanize_move_steps` — 僅 Windows:貝茲軌跡弧度與取樣點數
+- `humanize_pause_chance` / `humanize_pause_duration` / `humanize_pause_spread` — 主循環偶爾停頓的機率與時長
 
 ## Git
 
