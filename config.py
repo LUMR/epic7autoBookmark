@@ -58,6 +58,18 @@ class AppConfig:
     max_retry: int = 20
     swipe_fail_limit: int = 5
 
+    # ---- 人性化(降低機器特徵)----
+    humanize_enabled: bool = True                  # 總開關;False = 位元級退回現況
+    humanize_jitter_px: int = 8                    # 點擊位置抖動半徑(參考解析度 px)
+    humanize_swipe_jitter_px: int = 20             # 滑動起終點抖動半徑
+    humanize_double_click_spread: float = 0.03     # 雙擊間隔抖動(base 固定 0.05)
+    humanize_swipe_duration_spread: float = 0.04   # 滑動時長隨機(秒)
+    humanize_curve_strength: float = 0.3           # 僅 Windows:貝茲弧度
+    humanize_move_steps: int = 12                  # 僅 Windows:游標移動取樣點數
+    humanize_pause_chance: float = 0.12            # 偶爾停頓機率
+    humanize_pause_duration: float = 1.5           # 停頓基準秒數
+    humanize_pause_spread: float = 1.0             # 停頓抖動秒數
+
     @staticmethod
     def load(path: str = "config.json") -> AppConfig:
         """从 JSON 文件加载配置，缺失字段使用默认值。"""

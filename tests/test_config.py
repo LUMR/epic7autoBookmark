@@ -71,3 +71,37 @@ def test_validate_accepts_adb():
 def test_validate_rejects_bad_adb_screenshot_method():
     cfg = AppConfig._from_dict({"adb_screenshot_method": "minicap"})
     assert any("ADB 截图方式" in w for w in cfg.validate())
+
+
+def test_humanize_defaults():
+    cfg = AppConfig._from_dict({})
+    assert cfg.humanize_enabled is True
+    assert cfg.humanize_jitter_px == 8
+    assert cfg.humanize_swipe_jitter_px == 20
+    assert cfg.humanize_double_click_spread == 0.03
+    assert cfg.humanize_swipe_duration_spread == 0.04
+    assert cfg.humanize_curve_strength == 0.3
+    assert cfg.humanize_move_steps == 12
+    assert cfg.humanize_pause_chance == 0.12
+    assert cfg.humanize_pause_duration == 1.5
+    assert cfg.humanize_pause_spread == 1.0
+
+
+def test_humanize_from_dict():
+    raw = {
+        "humanize_enabled": False,
+        "humanize_jitter_px": 15,
+        "humanize_pause_chance": 0.25,
+    }
+    cfg = AppConfig._from_dict(raw)
+    assert cfg.humanize_enabled is False
+    assert cfg.humanize_jitter_px == 15
+    assert cfg.humanize_pause_chance == 0.25
+
+
+def test_old_config_without_humanize_uses_defaults():
+    """舊 config.json(無 humanize_*)載入用預設值,不報錯。"""
+    raw = {"e7_language": "zh-TW", "default_money": 1000}
+    cfg = AppConfig._from_dict(raw)
+    assert cfg.humanize_enabled is True
+    assert cfg.humanize_jitter_px == 8
