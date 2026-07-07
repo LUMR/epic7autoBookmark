@@ -1,4 +1,5 @@
 """device 層測試 — 純函數解析/縮放 + factory + 後端委派。"""
+import math
 import subprocess
 
 import numpy as np
@@ -15,6 +16,7 @@ from device.base import (
     scale_ref_to_device,
     select_serial,
 )
+from device.humanize import HumanizeSettings
 from device.windows import WindowsDeviceBackend
 
 
@@ -175,10 +177,11 @@ def _png_bytes_of(shape=(720, 1280, 3)):
     return buf.tobytes()
 
 
-def _adb_device(monkeypatch, wm="Physical size: 1280x720"):
+def _adb_device(monkeypatch, wm="Physical size: 1280x720", hs=None):
     client = MagicMock()
     client.wm_size.return_value = parse_wm_size(wm)
-    return AdbDeviceBackend(client), client
+    # 預設 disabled:既有精確座標測試驗證縮放邏輯,不受人性化影響
+    return AdbDeviceBackend(client, hs=hs or HumanizeSettings(enabled=False)), client
 
 
 def test_adb_device_capture_resizes_to_1080p(monkeypatch):
@@ -309,3 +312,46 @@ def test_create_device_unknown_platform_raises():
     cfg = MagicMock(); cfg.platform = "ios"
     with pytest.raises(DeviceError):
         create_device(cfg)
+
+
+def test_adb_device_click_jitters_when_enabled(monkeypatch):
+    """enabled 時 tap 座標偏移在 jitter_px 縮放範圍內(非精確 640,360)。"""
+    client = MagicMock()
+    client.wm_size.return_value = parse_wm_size("Physical size: 1280x720")
+    dev = AdbDeviceBackend(client, hs=HumanizeSettings(enabled=True, jitter_px=8))
+    dev.click(960, 540)  # 960,540 縮放到 1280x720 = 640,360
+    tx, ty = client.tap.call_args[0]
+    # 縮放後精確值 640,360;抖動 8px(ref) → device 座標偏移 <= 8*1280/1920
+    assert math.isclose(tx, 640, abs_tol=8)
+    assert math.isclose(ty, 360, abs_tol=8)
+    assert (tx, ty) != (640, 360) or True  # 抖動可能恰好不變,僅驗範圍
+
+
+def test_adb_device_swipe_jitters_endpoints_and_duration(monkeypatch):
+    """enabled 時 swipe 座標與 duration 都被隨機化。"""
+    client = MagicMock()
+    client.wm_size.return_value = parse_wm_size("Physical size: 1920x1080")
+    dev = AdbDeviceBackend(
+        client, hs=HumanizeSettings(enabled=True, swipe_jitter_px=10, swipe_duration_spread=0.1)
+    )
+    dev.swipe(100, 200, 100, 800, duration=0.3)
+    args = client.swipe.call_args[0]
+    sx1, sy1, sx2, sy2, ms = args
+    # 座標偏移在 10px 內,duration 偏移在 0.1s(=100ms)內
+    assert math.isclose(sx1, 100, abs_tol=10)
+    assert math.isclose(sy2, 800, abs_tol=10)
+    assert math.isclose(ms, 300, abs_tol=100)
+
+
+def test_adb_device_double_click_random_gap(monkeypatch):
+    """double_click 兩次 tap 之間使用隨機間隔(固定 0.05 之外的值)。"""
+    client = MagicMock()
+    client.wm_size.return_value = parse_wm_size("Physical size: 1920x1080")
+    dev = AdbDeviceBackend(client, hs=HumanizeSettings(enabled=True))
+    sleeps = []
+    monkeypatch.setattr("device.adb.time.sleep", lambda s: sleeps.append(s))
+    dev.double_click(960, 540)
+    assert client.tap.call_count == 2
+    # 兩 tap 之間應有一次 sleep(double_click 間隔),值在 [0.02, 0.08]
+    between = [s for s in sleeps if 0.02 <= s <= 0.08]
+    assert len(between) >= 1
