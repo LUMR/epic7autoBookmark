@@ -12,6 +12,7 @@ import numpy as np
 from capture import capture_window
 from capture.bitblt import close_all
 from device.base import DeviceBackend
+from device.humanize import HumanizeSettings, jitter_point, jitter_swipe_endpoints, clamp_ref
 from input.base import scale_to_client
 from input.sendinput import SendInputBackend
 
@@ -36,25 +37,37 @@ def find_game_window(window_title: str) -> int | None:
 
 
 class WindowsDeviceBackend(DeviceBackend):
-    def __init__(self, hwnd: int, capture_method: str = "auto"):
+    def __init__(self, hwnd: int, capture_method: str = "auto", hs: HumanizeSettings | None = None):
         self._hwnd = hwnd
         self._capture_method = capture_method
-        self._input = SendInputBackend()
+        self._hs = hs or HumanizeSettings()
+        self._input = SendInputBackend(self._hs)
 
     def capture(self) -> np.ndarray:
         return capture_window(self._hwnd, self._capture_method)
 
     def click(self, ref_x: float, ref_y: float) -> None:
+        if self._hs.enabled:
+            ref_x, ref_y = jitter_point(ref_x, ref_y, self._hs.jitter_px)
+            ref_x, ref_y = clamp_ref(ref_x, ref_y)
         x, y = scale_to_client(self._hwnd, ref_x, ref_y)
         self._input.click(self._hwnd, x, y)
 
     def double_click(self, ref_x: float, ref_y: float) -> None:
+        if self._hs.enabled:
+            ref_x, ref_y = jitter_point(ref_x, ref_y, self._hs.jitter_px)
+            ref_x, ref_y = clamp_ref(ref_x, ref_y)
         x, y = scale_to_client(self._hwnd, ref_x, ref_y)
         self._input.double_click(self._hwnd, x, y)
 
     def swipe(
         self, x1: float, y1: float, x2: float, y2: float, duration: float = 0.1
     ) -> None:
+        if self._hs.enabled:
+            (x1, y1), (x2, y2) = jitter_swipe_endpoints(
+                (x1, y1), (x2, y2), self._hs.swipe_jitter_px)
+            x1, y1 = clamp_ref(x1, y1)
+            x2, y2 = clamp_ref(x2, y2)
         sx1, sy1 = scale_to_client(self._hwnd, x1, y1)
         sx2, sy2 = scale_to_client(self._hwnd, x2, y2)
         self._input.swipe(self._hwnd, sx1, sy1, sx2, sy2, duration)

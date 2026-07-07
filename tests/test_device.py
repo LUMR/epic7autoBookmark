@@ -239,9 +239,9 @@ def test_adb_device_invalid_resolution_raises(monkeypatch):
 def test_windows_device_click_delegates(monkeypatch):
     monkeypatch.setattr("device.windows.scale_to_client", lambda hwnd, x, y: (x * 2, y * 2))
     fake_input = MagicMock()
-    monkeypatch.setattr("device.windows.SendInputBackend", lambda: fake_input)
+    monkeypatch.setattr("device.windows.SendInputBackend", lambda hs=None: fake_input)
 
-    dev = WindowsDeviceBackend(hwnd=42, capture_method="bitblt")
+    dev = WindowsDeviceBackend(hwnd=42, capture_method="bitblt", hs=HumanizeSettings(enabled=False))
     dev.double_click(100, 50)
 
     assert fake_input.double_click.call_count == 1
@@ -253,7 +253,7 @@ def test_windows_device_click_delegates(monkeypatch):
 def test_windows_device_capture_delegates(monkeypatch):
     expected = np.zeros((1080, 1920, 3), dtype=np.uint8)
     monkeypatch.setattr("device.windows.capture_window", lambda hwnd, m: expected)
-    monkeypatch.setattr("device.windows.SendInputBackend", lambda: MagicMock())
+    monkeypatch.setattr("device.windows.SendInputBackend", lambda hs=None: MagicMock())
     dev = WindowsDeviceBackend(hwnd=1, capture_method="bitblt")
     assert dev.capture() is expected
 
@@ -261,7 +261,7 @@ def test_windows_device_capture_delegates(monkeypatch):
 def test_windows_device_close_calls_close_all(monkeypatch):
     called = {"n": 0}
     monkeypatch.setattr("device.windows.close_all", lambda: called.__setitem__("n", called["n"] + 1))
-    monkeypatch.setattr("device.windows.SendInputBackend", lambda: MagicMock())
+    monkeypatch.setattr("device.windows.SendInputBackend", lambda hs=None: MagicMock())
     WindowsDeviceBackend(hwnd=1).close()
     assert called["n"] == 1
 
@@ -269,9 +269,9 @@ def test_windows_device_close_calls_close_all(monkeypatch):
 def test_windows_device_swipe_delegates(monkeypatch):
     monkeypatch.setattr("device.windows.scale_to_client", lambda hwnd, x, y: (x * 2, y * 2))
     fake_input = MagicMock()
-    monkeypatch.setattr("device.windows.SendInputBackend", lambda: fake_input)
+    monkeypatch.setattr("device.windows.SendInputBackend", lambda hs=None: fake_input)
 
-    dev = WindowsDeviceBackend(hwnd=42, capture_method="bitblt")
+    dev = WindowsDeviceBackend(hwnd=42, capture_method="bitblt", hs=HumanizeSettings(enabled=False))
     dev.swipe(100, 50, 200, 60, duration=0.3)
 
     fake_input.swipe.assert_called_once()
@@ -355,3 +355,53 @@ def test_adb_device_double_click_random_gap(monkeypatch):
     # 兩 tap 之間應有一次 sleep(double_click 間隔),值在 [0.02, 0.08]
     between = [s for s in sleeps if 0.02 <= s <= 0.08]
     assert len(between) >= 1
+
+
+def test_windows_device_click_jitters_when_enabled(monkeypatch):
+    """enabled 時傳給 input 的座標在 jitter 範圍內(非精確縮放值)。"""
+    monkeypatch.setattr("device.windows.scale_to_client", lambda hwnd, x, y: (x, y))
+    fake_input = MagicMock()
+    monkeypatch.setattr("device.windows.SendInputBackend", lambda hs=None: fake_input)
+    dev = WindowsDeviceBackend(
+        hwnd=42, capture_method="bitblt", hs=HumanizeSettings(enabled=True, jitter_px=8)
+    )
+    dev.click(1000, 500)
+    args = fake_input.click.call_args[0]
+    # scale_to_client 為恆等,故抖動後座標偏移在 8px 內
+    assert math.isclose(args[1], 1000, abs_tol=8)
+    assert math.isclose(args[2], 500, abs_tol=8)
+
+
+def test_windows_device_swipe_jitters_endpoints(monkeypatch):
+    monkeypatch.setattr("device.windows.scale_to_client", lambda hwnd, x, y: (x, y))
+    fake_input = MagicMock()
+    monkeypatch.setattr("device.windows.SendInputBackend", lambda hs=None: fake_input)
+    dev = WindowsDeviceBackend(
+        hwnd=42, capture_method="bitblt", hs=HumanizeSettings(enabled=True, swipe_jitter_px=10)
+    )
+    dev.swipe(100, 200, 100, 800, duration=0.3)
+    args = fake_input.swipe.call_args[0]
+    assert math.isclose(args[1], 100, abs_tol=10)
+    assert math.isclose(args[4], 800, abs_tol=10)
+
+
+def test_sendinput_click_moves_cursor_when_enabled(monkeypatch):
+    """enabled 時 click 沿軌跡多次 SetCursorPos;disabled 時瞬移一次。"""
+    import input.sendinput as si
+    setpos = MagicMock()
+    down = up = MagicMock()
+    monkeypatch.setattr(si.win32gui, "ClientToScreen", lambda hwnd, p: p)
+    monkeypatch.setattr(si.win32api, "GetCursorPos", lambda: (0, 0))
+    monkeypatch.setattr(si.win32api, "SetCursorPos", setpos)
+    monkeypatch.setattr(si.win32api, "mouse_event", lambda *a: None)
+    monkeypatch.setattr(si.time, "sleep", lambda s: None)
+
+    backend = si.SendInputBackend(hs=HumanizeSettings(enabled=True, move_steps=12))
+    backend.click(hwnd=1, x=500, y=500)
+    # 軌跡應產生多個 SetCursorPos(move_steps-1 段),遠大於 disabled 的 1 次
+    assert setpos.call_count >= 5
+
+    setpos.reset_mock()
+    backend_off = si.SendInputBackend(hs=HumanizeSettings(enabled=False))
+    backend_off.click(hwnd=1, x=500, y=500)
+    assert setpos.call_count == 1   # disabled:單次瞬移
