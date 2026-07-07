@@ -14,6 +14,7 @@ import numpy as np
 
 from config import AppConfig
 from detection.matcher import TemplateMatcher
+from device import humanize
 from device.base import DeviceBackend
 from automation.state import ShopContext, ShopState, BookmarkTarget
 from automation.templates import TemplateManager
@@ -134,9 +135,26 @@ class ShopFlow:
     # ---- 時延 ----
 
     def short_sleep(self, multiplier: float = 1.0) -> None:
-        """帶隨機抖動的延遲，時長 = config.short_sleep_base * multiplier + 抖動。"""
-        delay = self.config.short_sleep_base * multiplier + random.uniform(-0.2, 0.3)
+        """帶隨機抖動的延遲，時長 = config.short_sleep_base * multiplier + 抖動。
+
+        humanize 啟用時擴大且不對稱的抖動範圍(-0.3,0.6);關閉時退回原 (-0.2,0.3)。
+        """
+        if self.config.humanize_enabled:
+            jitter = random.uniform(-0.3, 0.6)
+        else:
+            jitter = random.uniform(-0.2, 0.3)
+        delay = self.config.short_sleep_base * multiplier + jitter
         time.sleep(max(0.0, delay))  # 防禦負值（base 過小時抖動可能為負）
+
+    def maybe_pause(self) -> None:
+        """以機率隨機停頓,模擬人類「看一下再繼續」。humanize 關閉時直接返回。"""
+        if not self.config.humanize_enabled:
+            return
+        if humanize.roll(self.config.humanize_pause_chance):
+            time.sleep(humanize.random_gap(
+                self.config.humanize_pause_duration,
+                self.config.humanize_pause_spread,
+            ))
 
     # ---- 點擊輔助（抽象重複的「點擊-等待」流程）----
 
@@ -183,6 +201,7 @@ class ShopFlow:
         self._init()
 
         while self.ctx.should_continue:
+            self.maybe_pause()
             state = self.ctx.state
             if state == ShopState.SCANNING:
                 self._handle_scanning()

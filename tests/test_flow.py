@@ -30,6 +30,10 @@ def _mk_flow(mode=1, expect_num=2):
     config.short_sleep_base = 0.0
     config.scan_roi_tuple = None
     config.button_roi_tuple = None
+    config.humanize_enabled = False       # 測試時關閉人性化,流程可預測
+    config.humanize_pause_chance = 0.0
+    config.humanize_pause_duration = 0.0
+    config.humanize_pause_spread = 0.0
 
     templates = MagicMock()
     matcher = MagicMock()
@@ -96,3 +100,58 @@ def test_init_calls_device_prepare():
     flow = ShopFlow(ctx, MagicMock(), MagicMock(), device, MagicMock(), config)
     flow._init()
     device.prepare.assert_called_once()
+
+
+def test_maybe_pause_noop_when_disabled(monkeypatch):
+    flow, *_ = _mk_flow()
+    flow.config.humanize_enabled = False
+    slept = []
+    monkeypatch.setattr("automation.flow.time.sleep", lambda s: slept.append(s))
+    flow.maybe_pause()
+    assert slept == []
+
+
+def test_maybe_pause_sleeps_when_rolled(monkeypatch):
+    flow, *_ = _mk_flow()
+    flow.config.humanize_enabled = True
+    flow.config.humanize_pause_chance = 0.5
+    flow.config.humanize_pause_duration = 2.0
+    flow.config.humanize_pause_spread = 0.0
+    monkeypatch.setattr("automation.flow.humanize.roll", lambda chance: True)
+    slept = []
+    monkeypatch.setattr("automation.flow.time.sleep", lambda s: slept.append(s))
+    flow.maybe_pause()
+    assert len(slept) == 1
+    assert 2.0 - 0.0 - 1e-9 <= slept[0] <= 2.0 + 0.0 + 1e-9
+
+
+def test_short_sleep_uses_wider_jitter_when_enabled(monkeypatch):
+    flow, *_ = _mk_flow()
+    flow.config.humanize_enabled = True
+    flow.config.short_sleep_base = 0.0
+    captured = {}
+
+    def _capture_uniform(a, b):
+        captured.setdefault("range", (a, b))
+        return 0.0
+
+    monkeypatch.setattr("automation.flow.random.uniform", _capture_uniform)
+    monkeypatch.setattr("automation.flow.time.sleep", lambda s: None)
+    flow.short_sleep(1.0)
+    assert captured["range"] == (-0.3, 0.6)
+
+
+def test_short_sleep_uses_legacy_jitter_when_disabled(monkeypatch):
+    flow, *_ = _mk_flow()
+    flow.config.humanize_enabled = False
+    flow.config.short_sleep_base = 0.0
+    captured = {}
+
+    def _capture_uniform(a, b):
+        captured.setdefault("range", (a, b))
+        return 0.0
+
+    monkeypatch.setattr("automation.flow.random.uniform", _capture_uniform)
+    monkeypatch.setattr("automation.flow.time.sleep", lambda s: None)
+    flow.short_sleep(1.0)
+    assert captured["range"] == (-0.2, 0.3)
