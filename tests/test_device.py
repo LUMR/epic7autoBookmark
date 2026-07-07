@@ -6,7 +6,8 @@ import numpy as np
 import pytest
 from unittest.mock import MagicMock
 
-from device import create_device
+from config import AppConfig
+from device import _humanize_settings, create_device
 from device.adb import AdbDeviceBackend
 from device.adb_client import AdbClient
 from device.base import (
@@ -283,9 +284,9 @@ def test_windows_device_swipe_delegates(monkeypatch):
 
 
 def test_create_device_windows(monkeypatch):
-    monkeypatch.setattr("device.WindowsDeviceBackend", lambda hwnd, capture_method="auto": ("win", hwnd, capture_method))
+    monkeypatch.setattr("device.WindowsDeviceBackend", lambda hwnd, capture_method="auto", hs=None: ("win", hwnd, capture_method))
     monkeypatch.setattr("device.find_game_window", lambda title: 999)
-    cfg = MagicMock(); cfg.platform = "windows"; cfg.window_title = "X"; cfg.capture_method = "bitblt"
+    cfg = AppConfig._from_dict({"platform": "windows", "capture_method": "bitblt"})
     dev = create_device(cfg)
     assert dev == ("win", 999, "bitblt")
 
@@ -299,11 +300,10 @@ def test_create_device_windows_no_window_raises(monkeypatch):
 
 def test_create_device_adb(monkeypatch):
     built = {}
-    monkeypatch.setattr("device.AdbDeviceBackend", lambda client: built.setdefault("client", client))
+    monkeypatch.setattr("device.AdbDeviceBackend", lambda client, hs=None: built.setdefault("client", client))
     fake_client = object()
     monkeypatch.setattr("device.AdbClient", lambda **kw: fake_client)
-    cfg = MagicMock()
-    cfg.platform = "adb"; cfg.adb_path = None; cfg.adb_connect = None; cfg.adb_serial = None
+    cfg = AppConfig._from_dict({"platform": "adb"})
     dev = create_device(cfg)
     assert built["client"] is fake_client
 
@@ -405,3 +405,46 @@ def test_sendinput_click_moves_cursor_when_enabled(monkeypatch):
     backend_off = si.SendInputBackend(hs=HumanizeSettings(enabled=False))
     backend_off.click(hwnd=1, x=500, y=500)
     assert setpos.call_count == 1   # disabled:單次瞬移
+
+
+def test_humanize_settings_maps_from_config():
+    cfg = AppConfig._from_dict({
+        "humanize_enabled": False,
+        "humanize_jitter_px": 15,
+        "humanize_swipe_jitter_px": 25,
+        "humanize_double_click_spread": 0.05,
+        "humanize_swipe_duration_spread": 0.06,
+        "humanize_curve_strength": 0.4,
+        "humanize_move_steps": 20,
+    })
+    hs = _humanize_settings(cfg)
+    assert hs.enabled is False
+    assert hs.jitter_px == 15
+    assert hs.swipe_jitter_px == 25
+    assert hs.double_click_gap == 0.05     # 固定,不暴露
+    assert hs.double_click_spread == 0.05
+    assert hs.swipe_duration_spread == 0.06
+    assert hs.curve_strength == 0.4
+    assert hs.move_steps == 20
+
+
+def test_create_device_windows_passes_humanize_settings(monkeypatch):
+    captured = {}
+    monkeypatch.setattr(
+        "device.WindowsDeviceBackend",
+        lambda hwnd, capture_method="auto", hs=None: captured.setdefault("hs", hs),
+    )
+    monkeypatch.setattr("device.find_game_window", lambda title: 999)
+    cfg = AppConfig._from_dict({"platform": "windows", "humanize_enabled": False, "humanize_jitter_px": 99})
+    create_device(cfg)
+    assert captured["hs"].enabled is False
+    assert captured["hs"].jitter_px == 99
+
+
+def test_create_device_adb_passes_humanize_settings(monkeypatch):
+    captured = {}
+    monkeypatch.setattr("device.AdbDeviceBackend", lambda client, hs=None: captured.setdefault("hs", hs))
+    monkeypatch.setattr("device.AdbClient", lambda **kw: object())
+    cfg = AppConfig._from_dict({"platform": "adb", "humanize_enabled": False})
+    create_device(cfg)
+    assert captured["hs"].enabled is False
