@@ -324,7 +324,6 @@ def test_adb_device_click_jitters_when_enabled(monkeypatch):
     # 縮放後精確值 640,360;抖動 8px(ref) → device 座標偏移 <= 8*1280/1920
     assert math.isclose(tx, 640, abs_tol=8)
     assert math.isclose(ty, 360, abs_tol=8)
-    assert (tx, ty) != (640, 360) or True  # 抖動可能恰好不變,僅驗範圍
 
 
 def test_adb_device_swipe_jitters_endpoints_and_duration(monkeypatch):
@@ -389,7 +388,6 @@ def test_sendinput_click_moves_cursor_when_enabled(monkeypatch):
     """enabled 時 click 沿軌跡多次 SetCursorPos;disabled 時瞬移一次。"""
     import input.sendinput as si
     setpos = MagicMock()
-    down = up = MagicMock()
     monkeypatch.setattr(si.win32gui, "ClientToScreen", lambda hwnd, p: p)
     monkeypatch.setattr(si.win32api, "GetCursorPos", lambda: (0, 0))
     monkeypatch.setattr(si.win32api, "SetCursorPos", setpos)
@@ -448,3 +446,42 @@ def test_create_device_adb_passes_humanize_settings(monkeypatch):
     cfg = AppConfig._from_dict({"platform": "adb", "humanize_enabled": False})
     create_device(cfg)
     assert captured["hs"].enabled is False
+
+
+def test_sendinput_disabled_uses_fixed_timing(monkeypatch):
+    """humanize_enabled=False 時,click 的 down-up 與 double_click 間隔須為固定值(位元級退回)。"""
+    import input.sendinput as si
+    monkeypatch.setattr(si.win32gui, "ClientToScreen", lambda hwnd, p: p)
+    monkeypatch.setattr(si.win32api, "GetCursorPos", lambda: (0, 0))
+    monkeypatch.setattr(si.win32api, "SetCursorPos", lambda p: None)
+    monkeypatch.setattr(si.win32api, "mouse_event", lambda *a: None)
+    sleeps = []
+    monkeypatch.setattr(si.time, "sleep", lambda s: sleeps.append(s))
+
+    backend = si.SendInputBackend(hs=HumanizeSettings(enabled=False))
+    backend.click(hwnd=1, x=500, y=500)
+    # disabled click:down-up 停留必為固定 0.02(非隨機區間)
+    assert 0.02 in sleeps
+    # disabled 不應出現 random_gap 產生的 [0.005,0.035) 隨機值
+    non_target = [s for s in sleeps if s != 0.02 and 0.005 <= s < 0.035]
+    assert non_target == []
+
+    sleeps.clear()
+    backend.double_click(hwnd=1, x=500, y=500)
+    # disabled double_click 間隔必為固定 0.05(double_click_gap)
+    assert 0.05 in sleeps
+
+
+def test_adb_device_disabled_double_click_fixed_gap(monkeypatch):
+    """ADB 後端 humanize_enabled=False 時,double_click 間隔為固定 0.05。"""
+    import device.adb as adbmod
+    client = MagicMock()
+    client.wm_size.return_value = parse_wm_size("Physical size: 1920x1080")
+    dev = adbmod.AdbDeviceBackend(client, hs=HumanizeSettings(enabled=False))
+    sleeps = []
+    monkeypatch.setattr(adbmod.time, "sleep", lambda s: sleeps.append(s))
+    dev.double_click(960, 540)
+    assert 0.05 in sleeps
+    # 不應出現 random_gap 的 [0.02,0.08] 隨機值(排除 0.05 本身)
+    non_target = [s for s in sleeps if s != 0.05 and 0.02 <= s <= 0.08]
+    assert non_target == []

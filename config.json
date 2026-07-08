@@ -6,5 +6,9 @@
     "default_stone": 30000,
     "default_covenant": 0,
     "default_mystic": 0,
-    "default_stone_usage": 99
+    "default_stone_usage": 99,
+    "short_sleep_base": 0.7,
+    "humanize_pause_chance": 0.05,
+    "humanize_pause_duration": 0.5,
+    "humanize_pause_spread": 0.3
 }

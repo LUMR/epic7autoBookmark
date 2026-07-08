@@ -12,7 +12,7 @@ import numpy as np
 from capture import capture_window
 from capture.bitblt import close_all
 from device.base import DeviceBackend
-from device.humanize import HumanizeSettings, jitter_point, jitter_swipe_endpoints, clamp_ref
+from device.humanize import HumanizeSettings, jitter_point, jitter_swipe_endpoints, clamp_ref, random_gap
 from input.base import scale_to_client
 from input.sendinput import SendInputBackend
 
@@ -68,6 +68,7 @@ class WindowsDeviceBackend(DeviceBackend):
                 (x1, y1), (x2, y2), self._hs.swipe_jitter_px)
             x1, y1 = clamp_ref(x1, y1)
             x2, y2 = clamp_ref(x2, y2)
+            duration = random_gap(duration, self._hs.swipe_duration_spread)
         sx1, sy1 = scale_to_client(self._hwnd, x1, y1)
         sx2, sy2 = scale_to_client(self._hwnd, x2, y2)
         self._input.swipe(self._hwnd, sx1, sy1, sx2, sy2, duration)

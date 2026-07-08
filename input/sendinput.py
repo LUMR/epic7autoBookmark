@@ -49,12 +49,16 @@ class SendInputBackend(InputBackend):
             win32api.SetCursorPos((sx, sy))
             time.sleep(0.02)
         win32api.mouse_event(win32con.MOUSEEVENTF_LEFTDOWN, sx, sy, 0, 0)
-        time.sleep(self._random_gap(0.02, 0.015))  # down-up 停留隨機
+        # down-up 停留:enabled 隨機,disabled 固定 0.02(位元級退回)
+        time.sleep(self._random_gap(0.02, 0.015) if self._hs.enabled else 0.02)
         win32api.mouse_event(win32con.MOUSEEVENTF_LEFTUP, sx, sy, 0, 0)
 
     def double_click(self, hwnd: int, x: float, y: float) -> None:
         self.click(hwnd, x, y)
-        time.sleep(self._random_gap(self._hs.double_click_gap, self._hs.double_click_spread))
+        # 雙擊間隔:enabled 隨機,disabled 固定 double_click_gap(位元級退回)
+        gap = (self._random_gap(self._hs.double_click_gap, self._hs.double_click_spread)
+               if self._hs.enabled else self._hs.double_click_gap)
+        time.sleep(gap)
         self.click(hwnd, x, y)
 
     def swipe(

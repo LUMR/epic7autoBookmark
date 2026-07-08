@@ -41,9 +41,11 @@ class AdbDeviceBackend(DeviceBackend):
         self._client.tap(dx, dy)
 
     def double_click(self, ref_x: float, ref_y: float) -> None:
-        # adb 無原生雙擊 → 兩次 tap,間隔隨機化(取代固定 0.05)
+        # adb 無原生雙擊 → 兩次 tap,間隔:enabled 隨機,disabled 固定(位元級退回)
         self.click(ref_x, ref_y)
-        time.sleep(random_gap(self._hs.double_click_gap, self._hs.double_click_spread))
+        gap = (random_gap(self._hs.double_click_gap, self._hs.double_click_spread)
+               if self._hs.enabled else self._hs.double_click_gap)
+        time.sleep(gap)
         self.click(ref_x, ref_y)
 
     def swipe(
