@@ -99,7 +99,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - `scan_roi` / `button_roi` — 模板匹配搜尋區域 `[x,y,w,h]`（可選，`null`=全圖）。用 `tools/roi_helper.py` 框選；書籤掃描與按鈕搜尋分開配置
 - `short_sleep_base` / `wait_timeout` / `wait_timeout_long` — 時序參數（預設 1.0 / 5.0 / 8.0 秒）
 - `max_retry` — 重試次數上限（預設 20）
-- `swipe_fail_limit` — 連續滑動失敗退出閾值（預設 5）
+- `swipe_fail_limit` — 連續滑動無變化（商店瀏覽完畢）達此閾值則刷新商店（預設 5）
 - `humanize_enabled` — 人性化（降低機器特徵）總開關,預設 `true`;`false` 位元級退回舊行為
 - `humanize_jitter_px` / `humanize_swipe_jitter_px` — 點擊/滑動起終點的位置抖動半徑（參考解析度 px）
 - `humanize_curve_strength` / `humanize_move_steps` — 僅 Windows:貝茲軌跡弧度與取樣點數

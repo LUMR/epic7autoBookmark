@@ -155,3 +155,40 @@ def test_short_sleep_uses_legacy_jitter_when_disabled(monkeypatch):
     monkeypatch.setattr("automation.flow.time.sleep", lambda s: None)
     flow.short_sleep(1.0)
     assert captured["range"] == (-0.2, 0.3)
+
+
+def test_swipe_then_scan_finds_bookmark_not_refresh():
+    """滑動後畫面出現書籤時應購買,而非因 need_refresh 跳刷新(回歸根因)。"""
+    flow, ctx, matcher, device = _mk_flow(mode=1, expect_num=2)
+    ctx.state = ShopState.SCANNING
+
+    # 第1輪 SCANNING:無書籤 → SWIPING
+    matcher.match.return_value = None
+    flow._handle_scanning()
+    assert ctx.state == ShopState.SWIPING
+
+    # SWIPING:滑動(FakeDevice 兩次 capture 回同圖 → changed=False,計數+1 但未達 limit)
+    flow._handle_swiping()
+    assert ctx.state == ShopState.SCANNING
+
+    # 第2輪 SCANNING:滑動後畫面出現聖約書籤
+    matcher.match.return_value = _match_result(300, 200)
+    flow._handle_scanning()
+
+    # 期望:偵測到書籤 → BUYING_COVENANT(舊代碼會因 need_refresh=True 跳 REFRESHING)
+    assert ctx.state == ShopState.BUYING_COVENANT
+
+
+def test_swipe_at_bottom_triggers_refresh_not_error():
+    """連續滑動無變化(到底)達 limit 次應刷新商店,不再 RuntimeError。"""
+    flow, ctx, matcher, device = _mk_flow(mode=1, expect_num=2)
+    ctx.state = ShopState.SWIPING
+    flow.config.swipe_fail_limit = 2
+
+    # FakeDevice 回同圖 → 每次滑動 changed=False
+    flow._handle_swiping()   # fail_count=1,未達 limit
+    assert ctx.need_refresh is False
+    flow._handle_swiping()   # fail_count=2 >= limit → 到底,標記刷新
+    assert ctx.need_refresh is True
+    assert ctx.swipe_fail_count == 0   # 刷新前重置計數
+    assert ctx.state == ShopState.SCANNING   # 下輪 SCANNING 會因 need_refresh 跳 REFRESHING

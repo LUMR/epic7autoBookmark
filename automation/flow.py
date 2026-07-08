@@ -342,14 +342,17 @@ class ShopFlow:
     # ---- SWIPING：滑動商店列表 ----
 
     def _handle_swiping(self) -> None:
-        """滑動商店列表。連續滑動失敗達閾值則停止。"""
+        """滑動商店列表瀏覽更多商品。
+
+        滑動生效 → 回 SCANNING 掃描新內容(不刷新)。
+        連續滑動無變化(商店已瀏覽完畢)達閾值 → 標記 need_refresh 刷新出新商店。
+        """
         self.log.info("滑動商店列表")
         self.short_sleep(0.3)
 
         before = self.ctx.device.capture()
 
         self.device.swipe(*SWIPE_START_REF, *SWIPE_END_REF, SWIPE_DURATION)
-        self.ctx.need_refresh = True
 
         self.short_sleep(1.0)
 
@@ -361,8 +364,9 @@ class ShopFlow:
             limit = self.config.swipe_fail_limit
             self.log.info(f"滑動未生效 ({self.ctx.swipe_fail_count}/{limit})")
             if self.ctx.swipe_fail_count >= limit:
-                self.log.error("連續滑動失敗過多，停止")
-                raise RuntimeError("swipe failed repeatedly")
+                self.log.info("商店已瀏覽完畢，刷新商店")
+                self.ctx.swipe_fail_count = 0
+                self.ctx.need_refresh = True
         else:
             self.ctx.swipe_fail_count = 0
 
