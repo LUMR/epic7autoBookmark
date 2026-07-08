@@ -29,6 +29,7 @@ class Ui_Main:
         try:
             config = AppConfig.load()
             defaults = config.ui_defaults
+            humanize_default = config.humanize_enabled
         except Exception:
             defaults = {
                 "money": "100000000",
@@ -37,6 +38,7 @@ class Ui_Main:
                 "mystic": "0",
                 "stone_usage": "99",
             }
+            humanize_default = True
 
         # 共享字体
         self.start = False
@@ -188,6 +190,13 @@ class Ui_Main:
         self.startButton.setObjectName("startButton")
         self.startButton.clicked.connect(self.startPressEvent)
 
+        # 人性化开关(开始按钮左侧)
+        self.humanizeCheckBox = QtWidgets.QCheckBox(self.functionTab)
+        self.humanizeCheckBox.setGeometry(QtCore.QRect(20, 412, 111, 20))
+        self.humanizeCheckBox.setFont(font_main)
+        self.humanizeCheckBox.setChecked(humanize_default)
+        self.humanizeCheckBox.setObjectName("humanizeCheckBox")
+
         self.tabWidget.addTab(self.functionTab, "")
 
         # ---- 简介 Tab ----
@@ -240,6 +249,7 @@ class Ui_Main:
         self.stoneTextShowLabel.setText(_translate("Main", "天空石"))
         self.stoneTotalShowEdit.setText(_translate("Main", defaults["stone"]))
         self.startButton.setText(_translate("Main", "開始"))
+        self.humanizeCheckBox.setText(_translate("Main", "人性化"))
         self.covenantTimeLabel.setText(_translate("Main", "次"))
         self.mysticTimeLabel.setText(_translate("Main", "次"))
         self.logTextBrowser.setHtml(
@@ -370,7 +380,8 @@ class Ui_Main:
             self.startProperty(False)
             return
 
-        self.worker.setVariable(startMode, expectNum, moneyNum, stoneNum)
+        humanize = self.humanizeCheckBox.isChecked()
+        self.worker.setVariable(startMode, expectNum, moneyNum, stoneNum, humanize)
         self.worker.start()
 
     def _handle_stop(self) -> None:
@@ -398,6 +409,7 @@ class Ui_Main:
         self.covenantInput.setDisabled(isDisabled)
         self.mysticInput.setDisabled(isDisabled)
         self.stoneInput.setDisabled(isDisabled)
+        self.humanizeCheckBox.setDisabled(isDisabled)
 
     def startWorker(self) -> None:
         self.logTextBrowser.setText("")
