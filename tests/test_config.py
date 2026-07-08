@@ -105,3 +105,19 @@ def test_old_config_without_humanize_uses_defaults():
     cfg = AppConfig._from_dict(raw)
     assert cfg.humanize_enabled is True
     assert cfg.humanize_jitter_px == 8
+
+
+def test_regression_assets_dir_default():
+    cfg = AppConfig._from_dict({})
+    assert cfg.regression_assets_dir == "./regression"
+
+
+def test_regression_assets_dir_from_dict():
+    cfg = AppConfig._from_dict({"regression_assets_dir": "./assets"})
+    assert cfg.regression_assets_dir == "./assets"
+
+
+def test_regression_assets_path_property():
+    from pathlib import Path
+    cfg = AppConfig._from_dict({})
+    assert cfg.regression_assets_path == Path("./regression")

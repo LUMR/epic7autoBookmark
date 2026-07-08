@@ -58,6 +58,9 @@ class AppConfig:
     max_retry: int = 20
     swipe_fail_limit: int = 5
 
+    # ---- 调试 / 回归素材 ----
+    regression_assets_dir: str = "./regression"   # 保存截图与回归测试的素材目录
+
     # ---- 人性化(降低機器特徵)----
     humanize_enabled: bool = True                  # 總開關;False = 位元級退回現況
     humanize_jitter_px: int = 8                    # 點擊位置抖動半徑(參考解析度 px)
@@ -162,6 +165,11 @@ class AppConfig:
     def button_roi_tuple(self) -> tuple[int, int, int, int] | None:
         """按钮搜寻 ROI，转为 matcher 需要的 tuple。"""
         return tuple(self.button_roi) if self.button_roi else None
+
+    @property
+    def regression_assets_path(self) -> Path:
+        """回归素材目录，转为 Path。"""
+        return Path(self.regression_assets_dir)
 
 
 def _coerce(value: Any, type_hint: str) -> Any:
