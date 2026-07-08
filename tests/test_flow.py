@@ -179,16 +179,29 @@ def test_swipe_then_scan_finds_bookmark_not_refresh():
     assert ctx.state == ShopState.BUYING_COVENANT
 
 
-def test_swipe_at_bottom_triggers_refresh_not_error():
-    """連續滑動無變化(到底)達 limit 次應刷新商店,不再 RuntimeError。"""
+def test_swipe_then_no_bookmark_triggers_refresh():
+    """滑動後仍無書籤 → 刷新(每商店周期只滑一次,防止無限滑動回歸)。"""
+    flow, ctx, matcher, device = _mk_flow(mode=1, expect_num=2)
+    ctx.state = ShopState.SCANNING
+    matcher.match.return_value = None
+
+    flow._handle_scanning()   # 無書籤,need_refresh=False → SWIPING
+    assert ctx.state == ShopState.SWIPING
+
+    flow._handle_swiping()    # 滑動,need_refresh=True → SCANNING
+    assert ctx.need_refresh is True
+    assert ctx.state == ShopState.SCANNING
+
+    flow._handle_scanning()   # 仍無書籤,need_refresh=True → REFRESHING(不再 SWIPING)
+    assert ctx.state == ShopState.REFRESHING
+
+
+def test_swiping_consecutive_no_change_raises():
+    """連續滑動無變化(畫面卡死)達 limit → RuntimeError(極端保護)。"""
     flow, ctx, matcher, device = _mk_flow(mode=1, expect_num=2)
     ctx.state = ShopState.SWIPING
     flow.config.swipe_fail_limit = 2
 
-    # FakeDevice 回同圖 → 每次滑動 changed=False
-    flow._handle_swiping()   # fail_count=1,未達 limit
-    assert ctx.need_refresh is False
-    flow._handle_swiping()   # fail_count=2 >= limit → 到底,標記刷新
-    assert ctx.need_refresh is True
-    assert ctx.swipe_fail_count == 0   # 刷新前重置計數
-    assert ctx.state == ShopState.SCANNING   # 下輪 SCANNING 會因 need_refresh 跳 REFRESHING
+    flow._handle_swiping()   # FakeDevice 同圖 → changed=False,fail_count=1
+    with pytest.raises(RuntimeError):
+        flow._handle_swiping()   # fail_count=2 >= limit → raise

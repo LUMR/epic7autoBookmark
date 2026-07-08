@@ -252,11 +252,11 @@ class ShopFlow:
     # ---- SCANNING：掃描商店 ----
 
     def _handle_scanning(self) -> None:
-        """掃描商店，查找目標書籤。"""
-        if self.ctx.need_refresh:
-            self.ctx.state = ShopState.REFRESHING
-            return
+        """掃描商店,查找目標書籤。
 
+        先掃描書籤(即使本商店已滑動過也要掃,避免漏買滑動後露出的書籤);
+        無書籤時:已滑動過(need_refresh) → 刷新,否則滑動瀏覽。
+        """
         screenshot = self.ctx.device.capture()
         scan_roi = self.config.scan_roi_tuple
 
@@ -284,7 +284,11 @@ class ShopFlow:
                 self.ctx.state = ShopState.BUYING_MYSTIC
                 return
 
-        self.ctx.state = ShopState.SWIPING
+        # 無書籤:本商店已滑動過 → 刷新;否則滑動瀏覽
+        if self.ctx.need_refresh:
+            self.ctx.state = ShopState.REFRESHING
+        else:
+            self.ctx.state = ShopState.SWIPING
 
     # ---- BUYING：購買書籤（聖約/神秘統一處理）----
 
@@ -342,10 +346,11 @@ class ShopFlow:
     # ---- SWIPING：滑動商店列表 ----
 
     def _handle_swiping(self) -> None:
-        """滑動商店列表瀏覽更多商品。
+        """滑動商店列表瀏覽更多商品,滑動後回掃描。
 
-        滑動生效 → 回 SCANNING 掃描新內容(不刷新)。
-        連續滑動無變化(商店已瀏覽完畢)達閾值 → 標記 need_refresh 刷新出新商店。
+        滑動後設 need_refresh=True:下次掃描若仍無書籤則刷新(每商店周期只滑一次,
+        不靠畫面變化判定 — 遊戲動畫會讓 changed 恆真,靠它會無限滑動)。
+        連續滑動無變化(畫面卡死)達閾值才停止。
         """
         self.log.info("滑動商店列表")
         self.short_sleep(0.3)
@@ -353,6 +358,7 @@ class ShopFlow:
         before = self.ctx.device.capture()
 
         self.device.swipe(*SWIPE_START_REF, *SWIPE_END_REF, SWIPE_DURATION)
+        self.ctx.need_refresh = True
 
         self.short_sleep(1.0)
 
@@ -364,9 +370,8 @@ class ShopFlow:
             limit = self.config.swipe_fail_limit
             self.log.info(f"滑動未生效 ({self.ctx.swipe_fail_count}/{limit})")
             if self.ctx.swipe_fail_count >= limit:
-                self.log.info("商店已瀏覽完畢，刷新商店")
-                self.ctx.swipe_fail_count = 0
-                self.ctx.need_refresh = True
+                self.log.error("連續滑動失敗過多，停止")
+                raise RuntimeError("swipe failed repeatedly")
         else:
             self.ctx.swipe_fail_count = 0
 
