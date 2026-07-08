@@ -34,14 +34,33 @@ class Worker(QtCore.QThread):
         self.expectNum = 0
         self.moneyNum = 0
         self.stoneNum = 0
+        self.humanize_enabled = True   # 預設與 AppConfig.humanize_enabled 一致
         self._running = False
         self._ctx: ShopContext | None = None
 
-    def setVariable(self, startMode: int, expectNum: int, moneyNum: int, stoneNum: int) -> None:
+    def setVariable(
+        self,
+        startMode: int,
+        expectNum: int,
+        moneyNum: int,
+        stoneNum: int,
+        humanize_enabled: bool,
+    ) -> None:
         self.startMode = startMode
         self.expectNum = expectNum
         self.moneyNum = moneyNum
         self.stoneNum = stoneNum
+        self.humanize_enabled = humanize_enabled
+
+    def _prepare_config(self) -> AppConfig:
+        """載入 config 並套用 GUI 的人性化開關。
+
+        在 create_device 之前覆蓋 config.humanize_enabled,使 flow(讀 config)
+        與 device(factory 從 config 組裝 HumanizeSettings)同時生效。
+        """
+        config = AppConfig.load()
+        config.humanize_enabled = self.humanize_enabled
+        return config
 
     def stop(self) -> None:
         """请求优雅停止。
@@ -56,8 +75,8 @@ class Worker(QtCore.QThread):
         self.isStart.emit()
 
         try:
-            # 加载配置
-            config = AppConfig.load()
+            # 加载配置(GUI 人性化開關在此套用)
+            config = self._prepare_config()
 
             # 创建日志器
             logger = ShopLogger(self.emitLog)
