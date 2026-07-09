@@ -132,6 +132,7 @@ def test_save_screenshot_writes_file(tmp_path):
     data = np.fromfile(str(path), dtype=np.uint8)
     back = cv2.imdecode(data, cv2.IMREAD_COLOR)
     assert back.shape == (1080, 1920, 3)
+    assert np.array_equal(back, img)
 
 
 def test_save_screenshot_increments(tmp_path):
@@ -177,6 +178,8 @@ def test_run_regression_pass_and_fail(tmp_path):
     assert report.per_prefix["covenant"] == (1, 2)
     assert len(report.failures) == 1
     assert report.failures[0].prefix == "covenant"
+    assert report.failures[0].threshold == 0.9
+    assert 0.0 <= report.failures[0].score < 0.9
 
 
 def test_run_regression_missing_dir(tmp_path):
@@ -197,3 +200,15 @@ def test_run_regression_ignores_non_png(tmp_path):
 
     report = ins.run_regression(str(tmp_path))
     assert report.total == 1 and report.passed == 1
+
+
+def test_run_regression_skips_undecodable(tmp_path):
+    tpl = _tex(15, 15, 3)
+    ins = _mk_inspector_with_template(tpl)
+    img = _tex(100, 100, 1)
+    img[40:55, 40:55] = tpl
+    _write_png(tmp_path / "covenant_1.png", img)
+    (tmp_path / "covenant_2.png").write_bytes(b"not a png")   # 损坏文件
+    report = ins.run_regression(str(tmp_path))
+    assert report.total == 1      # 损坏文件被跳过,只统计 covenant_1
+    assert report.passed == 1

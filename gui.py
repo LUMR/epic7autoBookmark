@@ -15,7 +15,7 @@ from config import AppConfig
 from worker import Worker
 from detection.matcher import TemplateMatcher
 from automation.templates import TemplateManager
-from automation.inspection import Inspector, ITEM_DISPLAY, RegressionReport
+from automation.inspection import Inspector, ITEM_DISPLAY
 from device import create_device, DeviceError
 
 
@@ -622,6 +622,9 @@ class Ui_Main:
         if prefix is None:
             self.debugResult.append("請先勾選一個項目")
             return
+        if self._debugScreenshot is None:
+            self.debugResult.append("請先檢測")
+            return
         w = self._startDebugWorker()
         if w is not None:
             w.save(self._debugScreenshot, prefix)
@@ -664,7 +667,6 @@ class Ui_Main:
 
     def _onDebugError(self, msg) -> None:
         self.debugResult.append(msg)
-        self._setDebugBusy(False)
 
     @staticmethod
     def _formatReport(report) -> str:

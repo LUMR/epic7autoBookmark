@@ -76,7 +76,7 @@ class RegressionReport:
 class Inspector:
     """检测/回归执行器（无 Qt 依赖、无截屏，截图由外部传入）。"""
 
-    _RAW_THRESHOLD: float = 0.0   # 取原始最高分，不做阈值过滤
+    _RAW_THRESHOLD: float = 0.0   # 取原始最高分(TM_CCOEFF_NORMED 負相關分會被 floor 至 0,debug UI 更直觀)
 
     def __init__(self, templates, matcher, config):
         self.templates = templates
@@ -174,15 +174,19 @@ class Inspector:
                 continue   # 模板缺失，该类整组跳过
             p_count = t_count = 0
             for fp in files:
-                image = self._load_image(fp)
+                try:
+                    image = self._load_image(fp)
+                except IOError:
+                    continue   # 损坏/不可解码文件跳过,不中止整批回归
                 t_count += 1
                 total += 1
-                if self.matcher.match(image, template, threshold, item.prefix, roi=roi) is not None:
+                raw = self.matcher.match(image, template, self._RAW_THRESHOLD, item.prefix, roi=roi)
+                score = float(raw.score) if raw is not None else 0.0
+                if score >= threshold:
                     p_count += 1
                     passed += 1
                 else:
-                    raw = self.matcher.match(image, template, self._RAW_THRESHOLD, item.prefix, roi=roi)
-                    failures.append(Failure(str(fp), item.prefix, float(raw.score) if raw else 0.0, threshold))
+                    failures.append(Failure(str(fp), item.prefix, score, threshold))
             per_prefix[item.prefix] = (p_count, t_count)
         return RegressionReport(per_prefix, failures, total, passed)
 
