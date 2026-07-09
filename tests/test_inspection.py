@@ -96,3 +96,46 @@ def test_pick_default_tie_prefers_bookmark():
 def test_pick_default_all_none_returns_none():
     scores = [ItemScore("covenant", "聖約", None, 0.9, False)]
     assert Inspector(MagicMock(), MagicMock(), MagicMock()).pick_default(scores) is None
+
+
+def _ins():
+    return Inspector(MagicMock(), MagicMock(), MagicMock())
+
+
+def test_next_index_empty_dir(tmp_path):
+    assert _ins().next_index(str(tmp_path), "covenant") == 1
+
+
+def test_next_index_increments(tmp_path):
+    (tmp_path / "covenant_1.png").write_bytes(b"")
+    (tmp_path / "covenant_2.png").write_bytes(b"")
+    assert _ins().next_index(str(tmp_path), "covenant") == 3
+
+
+def test_next_index_ignores_other_prefixes(tmp_path):
+    (tmp_path / "covenant_1.png").write_bytes(b"")
+    (tmp_path / "mystic_5.png").write_bytes(b"")
+    assert _ins().next_index(str(tmp_path), "covenant") == 2
+
+
+def test_next_index_unordered(tmp_path):
+    (tmp_path / "covenant_10.png").write_bytes(b"")
+    (tmp_path / "covenant_2.png").write_bytes(b"")
+    assert _ins().next_index(str(tmp_path), "covenant") == 11
+
+
+def test_save_screenshot_writes_file(tmp_path):
+    img = np.zeros((1080, 1920, 3), dtype=np.uint8)
+    path = _ins().save_screenshot(img, str(tmp_path), "covenant")
+    assert path.exists()
+    assert path.name == "covenant_1.png"
+    data = np.fromfile(str(path), dtype=np.uint8)
+    back = cv2.imdecode(data, cv2.IMREAD_COLOR)
+    assert back.shape == (1080, 1920, 3)
+
+
+def test_save_screenshot_increments(tmp_path):
+    (tmp_path / "covenant_1.png").write_bytes(b"")
+    img = np.zeros((10, 10, 3), dtype=np.uint8)
+    path = _ins().save_screenshot(img, str(tmp_path), "covenant")
+    assert path.name == "covenant_2.png"

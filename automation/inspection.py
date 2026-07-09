@@ -115,3 +115,29 @@ class Inspector:
         if bookmark_tied:
             return bookmark_tied[0].prefix
         return tied[0].prefix
+
+    # ---- 截图编号与保存 ----
+
+    def next_index(self, directory: str, prefix: str) -> int:
+        """扫描目录中 {prefix}_{n}.png，返回最大 n + 1（无则 1）。"""
+        d = Path(directory)
+        if not d.exists():
+            return 1
+        max_n = 0
+        for p in d.iterdir():
+            m = _INDEX_RE.match(p.name)
+            if m and m.group("prefix") == prefix:
+                max_n = max(max_n, int(m.group("n")))
+        return max_n + 1
+
+    def save_screenshot(self, screenshot: np.ndarray, directory: str, prefix: str) -> Path:
+        """按 {prefix}_{n}.png 保存截图（中文路径安全）。"""
+        d = Path(directory)
+        d.mkdir(parents=True, exist_ok=True)
+        n = self.next_index(directory, prefix)
+        path = d / f"{prefix}_{n}.png"
+        ok, buf = cv2.imencode(".png", screenshot)
+        if not ok:
+            raise IOError(f"無法編碼 PNG: {path}")
+        buf.tofile(str(path))   # np.tofile 支持中文路径（cv2.imwrite 不支持）
+        return path
