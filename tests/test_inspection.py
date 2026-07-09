@@ -139,3 +139,61 @@ def test_save_screenshot_increments(tmp_path):
     img = np.zeros((10, 10, 3), dtype=np.uint8)
     path = _ins().save_screenshot(img, str(tmp_path), "covenant")
     assert path.name == "covenant_2.png"
+
+
+def _mk_inspector_with_template(template):
+    templates = MagicMock()
+    templates.load.return_value = template
+    config = MagicMock()
+    config.match_threshold_location = 0.9
+    config.match_threshold_button = 0.85
+    config.match_threshold_confirm = 0.9
+    config.match_threshold_refresh = 0.8
+    config.scan_roi_tuple = None
+    config.button_roi_tuple = None
+    return Inspector(templates, TemplateMatcher(), config)
+
+
+def _write_png(path, img):
+    """中文路径安全的 PNG 写入（测试用）。"""
+    ok, buf = cv2.imencode(".png", img)
+    buf.tofile(str(path))
+
+
+def test_run_regression_pass_and_fail(tmp_path):
+    tpl = _tex(20, 20, 7)
+    ins = _mk_inspector_with_template(tpl)
+    # covenant_1：含模板 → 通过
+    img_pass = _tex(200, 200, 1)
+    img_pass[100:120, 100:120] = tpl
+    _write_png(tmp_path / "covenant_1.png", img_pass)
+    # covenant_2：纯噪声 → 不通过
+    _write_png(tmp_path / "covenant_2.png", _tex(200, 200, 2))
+
+    report = ins.run_regression(str(tmp_path))
+
+    assert report.total == 2
+    assert report.passed == 1
+    assert report.per_prefix["covenant"] == (1, 2)
+    assert len(report.failures) == 1
+    assert report.failures[0].prefix == "covenant"
+
+
+def test_run_regression_missing_dir(tmp_path):
+    ins = _mk_inspector_with_template(_tex(10, 10, 1))
+    report = ins.run_regression(str(tmp_path / "nope"))
+    assert report.total == 0 and report.passed == 0
+    assert report.per_prefix == {}
+    assert report.failures == []
+
+
+def test_run_regression_ignores_non_png(tmp_path):
+    tpl = _tex(15, 15, 3)
+    ins = _mk_inspector_with_template(tpl)
+    img = _tex(100, 100, 1)
+    img[40:55, 40:55] = tpl
+    _write_png(tmp_path / "covenant_1.png", img)
+    (tmp_path / "readme.txt").write_text("ignore me", encoding="utf-8")
+
+    report = ins.run_regression(str(tmp_path))
+    assert report.total == 1 and report.passed == 1

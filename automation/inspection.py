@@ -141,3 +141,56 @@ class Inspector:
             raise IOError(f"無法編碼 PNG: {path}")
         buf.tofile(str(path))   # np.tofile 支持中文路径（cv2.imwrite 不支持）
         return path
+
+    # ---- 回归测试 ----
+
+    def run_regression(self, directory: str) -> RegressionReport:
+        """对素材目录中每张 {prefix}_{n}.png 用对应模板 + 阈值 + ROI 判定是否达标。"""
+        d = Path(directory)
+        per_prefix: dict[str, tuple[int, int]] = {}
+        failures: list[Failure] = []
+        total = passed = 0
+        if not d.exists():
+            return RegressionReport(per_prefix, failures, 0, 0)
+
+        files_by_prefix: dict[str, list[Path]] = {}
+        for p in sorted(d.iterdir()):
+            if not p.is_file() or not p.name.lower().endswith(".png"):
+                continue
+            m = _INDEX_RE.match(p.name)
+            if not m:
+                continue
+            files_by_prefix.setdefault(m.group("prefix"), []).append(p)
+
+        for item in INSPECTION_ITEMS:
+            files = files_by_prefix.get(item.prefix, [])
+            if not files:
+                continue
+            threshold = float(getattr(self.config, item.threshold_attr))
+            roi = getattr(self.config, item.roi_attr)
+            try:
+                template = self.templates.load(item.template_name)
+            except FileNotFoundError:
+                continue   # 模板缺失，该类整组跳过
+            p_count = t_count = 0
+            for fp in files:
+                image = self._load_image(fp)
+                t_count += 1
+                total += 1
+                if self.matcher.match(image, template, threshold, item.prefix, roi=roi) is not None:
+                    p_count += 1
+                    passed += 1
+                else:
+                    raw = self.matcher.match(image, template, self._RAW_THRESHOLD, item.prefix, roi=roi)
+                    failures.append(Failure(str(fp), item.prefix, float(raw.score) if raw else 0.0, threshold))
+            per_prefix[item.prefix] = (p_count, t_count)
+        return RegressionReport(per_prefix, failures, total, passed)
+
+    @staticmethod
+    def _load_image(path: Path) -> np.ndarray:
+        """读取图片（中文路径安全），与 TemplateManager._load_image 对称。"""
+        data = np.fromfile(str(path), dtype=np.uint8)
+        img = cv2.imdecode(data, cv2.IMREAD_COLOR)
+        if img is None:
+            raise IOError(f"無法讀取圖片: {path}")
+        return img
