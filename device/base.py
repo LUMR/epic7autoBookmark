@@ -88,3 +88,8 @@ class DeviceBackend(ABC):
     def resolution(self) -> tuple[int, int]:
         """設備實際解析度(日誌/偵錯)。子類覆寫。"""
         return REF_WIDTH, REF_HEIGHT
+
+    @property
+    def window_handle(self) -> int | None:
+        """原生視窗句柄(Windows),供 detect 截圖前的前台檢查;無則 None。"""
+        return None

@@ -86,3 +86,7 @@ class WindowsDeviceBackend(DeviceBackend):
     def resolution(self) -> tuple[int, int]:
         rect = win32gui.GetClientRect(self._hwnd)
         return rect[2], rect[3]
+
+    @property
+    def window_handle(self) -> int | None:
+        return self._hwnd

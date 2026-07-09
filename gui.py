@@ -7,9 +7,15 @@
 
 from __future__ import annotations
 
+import time
 from pathlib import Path
 
 from PyQt6 import QtCore, QtGui, QtWidgets
+
+try:
+    import win32gui
+except ImportError:
+    win32gui = None  # type: ignore[assignment]
 
 from config import AppConfig
 from worker import Worker
@@ -25,6 +31,35 @@ def _make_font(family: str = "微軟正黑體", size: int = 12) -> QtGui.QFont:
     font.setFamily(family)
     font.setPointSize(size)
     return font
+
+
+# detect 截图前等待遊戲視窗到前台並重繪,避免本工具視窗遮擋被截入
+_FOREGROUND_TIMEOUT = 2.0
+_FOREGROUND_INTERVAL = 0.05
+_REPAINT_DELAY = 0.15
+_NO_HANDLE_WAIT = 0.5
+
+
+def _wait_game_foreground(device, timeout: float = _FOREGROUND_TIMEOUT) -> None:
+    """等待遊戲視窗切到前台並重繪,再讓 detect 截圖。
+
+    截圖(BitBlt/MSS)讀的是螢幕上遊戲客戶區矩形的像素,任何遮擋該矩形的前景視窗
+    (含本工具)都會被截入。prepare() 把遊戲置頂後,需輪詢確認它真正切到前台並留
+    時間重繪(覆蓋工具視窗)再截圖。無句柄(ADB/win32gui 不可用)時回退固定等待。
+    """
+    hwnd = getattr(device, "window_handle", None)
+    if hwnd is None or win32gui is None:
+        time.sleep(_NO_HANDLE_WAIT)
+        return
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        try:
+            if win32gui.GetForegroundWindow() == hwnd:
+                break
+        except Exception:
+            break
+        time.sleep(_FOREGROUND_INTERVAL)
+    time.sleep(_REPAINT_DELAY)
 
 
 class DebugWorker(QtCore.QThread):
@@ -71,6 +106,7 @@ class DebugWorker(QtCore.QThread):
                 device = create_device(config)
                 try:
                     device.prepare()
+                    _wait_game_foreground(device)
                     shot = device.capture()
                 finally:
                     device.close()
