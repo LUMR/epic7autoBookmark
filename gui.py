@@ -11,6 +11,10 @@ from PyQt6 import QtCore, QtGui, QtWidgets
 
 from config import AppConfig
 from worker import Worker
+from detection.matcher import TemplateMatcher
+from automation.templates import TemplateManager
+from automation.inspection import Inspector, ITEM_DISPLAY, RegressionReport
+from device import create_device, DeviceError
 
 
 def _make_font(family: str = "微軟正黑體", size: int = 12) -> QtGui.QFont:
@@ -48,24 +52,24 @@ class Ui_Main:
 
         # 主窗口
         Main.setObjectName("Main")
-        Main.resize(310, 460)
-        Main.setMinimumSize(QtCore.QSize(310, 500))
-        Main.setMaximumSize(QtCore.QSize(310, 500))
+        Main.resize(420, 600)
+        Main.setMinimumSize(QtCore.QSize(420, 600))
+        Main.setMaximumSize(QtCore.QSize(420, 600))
         Main.setFont(font_main)
 
         # Tab 控件
         self.tabWidget = QtWidgets.QTabWidget(Main)
-        self.tabWidget.setGeometry(QtCore.QRect(5, 5, 300, 490))
-        self.tabWidget.setMinimumSize(QtCore.QSize(300, 490))
-        self.tabWidget.setMaximumSize(QtCore.QSize(300, 490))
+        self.tabWidget.setGeometry(QtCore.QRect(5, 5, 410, 590))
+        self.tabWidget.setMinimumSize(QtCore.QSize(410, 590))
+        self.tabWidget.setMaximumSize(QtCore.QSize(410, 590))
         self.tabWidget.setFont(font_main)
         self.tabWidget.setStyleSheet("")
         self.tabWidget.setObjectName("tabWidget")
 
         # ---- 功能 Tab ----
         self.functionTab = QtWidgets.QWidget()
-        self.functionTab.setMinimumSize(QtCore.QSize(300, 490))
-        self.functionTab.setMaximumSize(QtCore.QSize(300, 490))
+        self.functionTab.setMinimumSize(QtCore.QSize(410, 590))
+        self.functionTab.setMaximumSize(QtCore.QSize(410, 590))
         self.functionTab.setFont(font_main)
         self.functionTab.setObjectName("functionTab")
 
@@ -201,8 +205,8 @@ class Ui_Main:
 
         # ---- 简介 Tab ----
         self.introductionTab = QtWidgets.QWidget()
-        self.introductionTab.setMinimumSize(QtCore.QSize(300, 450))
-        self.introductionTab.setMaximumSize(QtCore.QSize(300, 450))
+        self.introductionTab.setMinimumSize(QtCore.QSize(410, 590))
+        self.introductionTab.setMaximumSize(QtCore.QSize(410, 590))
         self.introductionTab.setFont(font_main)
         self.introductionTab.setObjectName("introductionTab")
 
@@ -222,6 +226,80 @@ class Ui_Main:
         self.githubTextUrl.setWordWrap(True)
         self.githubTextUrl.setOpenExternalLinks(True)
         self.githubTextUrl.setObjectName("githubTextUrl")
+
+        # ---- 檢測 Tab ----
+        self.debugTab = QtWidgets.QWidget()
+        self.debugTab.setMinimumSize(QtCore.QSize(410, 590))
+        self.debugTab.setMaximumSize(QtCore.QSize(410, 590))
+        self.debugTab.setFont(font_main)
+        self.debugTab.setObjectName("debugTab")
+
+        # 标题行
+        self.debugHeaderItem = QtWidgets.QLabel(self.debugTab)
+        self.debugHeaderItem.setGeometry(QtCore.QRect(20, 12, 120, 20))
+        self.debugHeaderItem.setFont(font_main)
+        self.debugHeaderScore = QtWidgets.QLabel(self.debugTab)
+        self.debugHeaderScore.setGeometry(QtCore.QRect(290, 12, 100, 20))
+        self.debugHeaderScore.setFont(font_main)
+
+        # 6 行：单选(名称) + 分数
+        self.debugButtonGroup = QtWidgets.QButtonGroup(self.debugTab)
+        self.debugButtonGroup.setExclusive(True)
+        self.debugItems: list[tuple[str, QtWidgets.QRadioButton, QtWidgets.QLabel]] = []
+        row_y = 40
+        for prefix, name in [
+            ("covenant", "聖約書籤"),
+            ("mystic", "神秘書籤"),
+            ("buyButton", "購買按鈕"),
+            ("buyConfirm", "購買確認"),
+            ("refresh", "刷新按鈕"),
+            ("refreshYes", "刷新確認"),
+        ]:
+            rb = QtWidgets.QRadioButton(self.debugTab)
+            rb.setGeometry(QtCore.QRect(20, row_y, 260, 24))
+            rb.setFont(font_main)
+            rb.setText(name)
+            sl = QtWidgets.QLabel(self.debugTab)
+            sl.setGeometry(QtCore.QRect(290, row_y, 100, 24))
+            sl.setFont(font_main)
+            sl.setText("--")
+            self.debugButtonGroup.addButton(rb)
+            self.debugItems.append((prefix, rb, sl))
+            row_y += 30
+
+        # 分隔线
+        self.debugDivider1 = QtWidgets.QFrame(self.debugTab)
+        self.debugDivider1.setGeometry(QtCore.QRect(10, 235, 390, 20))
+        self.debugDivider1.setFrameShape(QtWidgets.QFrame.Shape.HLine)
+        self.debugDivider1.setFrameShadow(QtWidgets.QFrame.Shadow.Sunken)
+
+        # 操作按钮
+        self.debugDetectBtn = QtWidgets.QPushButton(self.debugTab)
+        self.debugDetectBtn.setGeometry(QtCore.QRect(30, 255, 110, 34))
+        self.debugDetectBtn.setFont(font_main)
+        self.debugSaveBtn = QtWidgets.QPushButton(self.debugTab)
+        self.debugSaveBtn.setGeometry(QtCore.QRect(160, 255, 110, 34))
+        self.debugSaveBtn.setFont(font_main)
+        self.debugRegressBtn = QtWidgets.QPushButton(self.debugTab)
+        self.debugRegressBtn.setGeometry(QtCore.QRect(30, 297, 240, 34))
+        self.debugRegressBtn.setFont(font_main)
+
+        # 分隔线
+        self.debugDivider2 = QtWidgets.QFrame(self.debugTab)
+        self.debugDivider2.setGeometry(QtCore.QRect(10, 345, 390, 20))
+        self.debugDivider2.setFrameShape(QtWidgets.QFrame.Shape.HLine)
+        self.debugDivider2.setFrameShadow(QtWidgets.QFrame.Shadow.Sunken)
+
+        # 结果区
+        self.debugResult = QtWidgets.QTextBrowser(self.debugTab)
+        self.debugResult.setGeometry(QtCore.QRect(20, 365, 370, 210))
+        self.debugResult.setFont(font_log)
+
+        self.tabWidget.addTab(self.debugTab, "")
+
+        # 调试状态
+        self._debugScreenshot = None     # 缓存最近一次检测截图（np.ndarray）
+        self._debugWorker = None         # 当前后台 DebugWorker
 
         self.tabWidget.addTab(self.introductionTab, "")
 
@@ -302,6 +380,14 @@ class Ui_Main:
                 "Main",
                 '<a href="https://github.com/LUMR/epic7autoBookmark">https://github.com/LUMR/epic7autoBookmark</a>',
             )
+        )
+        self.debugHeaderItem.setText(_translate("Main", "項目"))
+        self.debugHeaderScore.setText(_translate("Main", "分數"))
+        self.debugDetectBtn.setText(_translate("Main", "檢測"))
+        self.debugSaveBtn.setText(_translate("Main", "保存截圖"))
+        self.debugRegressBtn.setText(_translate("Main", "回歸測試"))
+        self.tabWidget.setTabText(
+            self.tabWidget.indexOf(self.debugTab), _translate("Main", "檢測")
         )
         self.tabWidget.setTabText(
             self.tabWidget.indexOf(self.introductionTab), _translate("Main", "簡介")
