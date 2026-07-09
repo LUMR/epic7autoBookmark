@@ -77,6 +77,7 @@ class Inspector:
     """检测/回归执行器（无 Qt 依赖、无截屏，截图由外部传入）。"""
 
     _RAW_THRESHOLD: float = 0.0   # 取原始最高分(TM_CCOEFF_NORMED 負相關分會被 floor 至 0,debug UI 更直觀)
+    _JPEG_QUALITY: int = 90       # 截图存为 JPEG(与回归素材一致),保留 .png 扩展名
 
     def __init__(self, templates, matcher, config):
         self.templates = templates
@@ -131,14 +132,17 @@ class Inspector:
         return max_n + 1
 
     def save_screenshot(self, screenshot: np.ndarray, directory: str, prefix: str) -> Path:
-        """按 {prefix}_{n}.png 保存截图（中文路径安全）。"""
+        """按 {prefix}_{n}.png 保存截图（JPEG 压缩,中文路径安全）。
+
+        以 JPEG 编码但保留 .png 扩展名——cv2.imdecode 按文件内容识别格式,
+        与 regression/ 素材一致,体积约为无损 PNG 的 1/6。"""
         d = Path(directory)
         d.mkdir(parents=True, exist_ok=True)
         n = self.next_index(directory, prefix)
         path = d / f"{prefix}_{n}.png"
-        ok, buf = cv2.imencode(".png", screenshot)
+        ok, buf = cv2.imencode(".jpg", screenshot, [cv2.IMWRITE_JPEG_QUALITY, self._JPEG_QUALITY])
         if not ok:
-            raise IOError(f"無法編碼 PNG: {path}")
+            raise IOError(f"無法編碼 JPEG: {path}")
         buf.tofile(str(path))   # np.tofile 支持中文路径（cv2.imwrite 不支持）
         return path
 

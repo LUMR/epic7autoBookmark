@@ -142,6 +142,16 @@ def test_save_screenshot_increments(tmp_path):
     assert path.name == "covenant_2.png"
 
 
+def test_save_screenshot_writes_jpeg(tmp_path):
+    """save_screenshot 以 JPEG 压缩存储(与回歸素材一致),保持 .png 擴展名可被 cv2 解碼。"""
+    img = np.zeros((1080, 1920, 3), dtype=np.uint8)
+    path = _ins().save_screenshot(img, str(tmp_path), "covenant")
+    data = np.fromfile(str(path), dtype=np.uint8)
+    assert data[:3].tobytes() == b"\xff\xd8\xff"        # JPEG SOI magic
+    back = cv2.imdecode(data, cv2.IMREAD_COLOR)
+    assert back.shape == (1080, 1920, 3)
+
+
 def _mk_inspector_with_template(template):
     templates = MagicMock()
     templates.load.return_value = template
