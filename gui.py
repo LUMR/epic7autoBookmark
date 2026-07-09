@@ -7,6 +7,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from PyQt6 import QtCore, QtGui, QtWidgets
 
 from config import AppConfig
@@ -23,6 +25,70 @@ def _make_font(family: str = "微軟正黑體", size: int = 12) -> QtGui.QFont:
     font.setFamily(family)
     font.setPointSize(size)
     return font
+
+
+class DebugWorker(QtCore.QThread):
+    """檢測 Tab 的后台执行线程（截屏/保存/回归），避免阻塞 UI。
+
+    一次只执行一种 action（detect/save/regress），通过对应信号回传结果；
+    GUI slot 在主线程更新控件。截图在 detect 时随信号回传，供 save 复用。
+    """
+
+    detectDone = QtCore.pyqtSignal(list, str, object)   # scores, picked_prefix, screenshot
+    saveDone = QtCore.pyqtSignal(str)                   # saved path
+    regressDone = QtCore.pyqtSignal(object)             # RegressionReport
+    error = QtCore.pyqtSignal(str)
+
+    def __init__(self):
+        super().__init__()
+        self._mode: str | None = None
+        self._screenshot = None
+        self._prefix: str | None = None
+
+    def detect(self):
+        self._mode = "detect"
+        self.start()
+
+    def save(self, screenshot, prefix):
+        self._mode = "save"
+        self._screenshot = screenshot
+        self._prefix = prefix
+        self.start()
+
+    def regress(self):
+        self._mode = "regress"
+        self.start()
+
+    def run(self):
+        try:
+            config = AppConfig.load()
+            templates = TemplateManager(config.language)
+            matcher = TemplateMatcher()
+            inspector = Inspector(templates, matcher, config)
+            directory = config.regression_assets_dir
+
+            if self._mode == "detect":
+                device = create_device(config)
+                try:
+                    device.prepare()
+                    shot = device.capture()
+                finally:
+                    device.close()
+                scores = inspector.inspect(shot)
+                picked = inspector.pick_default(scores) or ""
+                self.detectDone.emit(scores, picked, shot)
+            elif self._mode == "save":
+                if self._screenshot is None:
+                    self.error.emit("請先檢測")
+                    return
+                path = inspector.save_screenshot(self._screenshot, directory, self._prefix or "")
+                self.saveDone.emit(str(path))
+            elif self._mode == "regress":
+                self.regressDone.emit(inspector.run_regression(directory))
+        except DeviceError as e:
+            self.error.emit(f"設備錯誤: {e}")
+        except Exception as e:   # noqa: BLE001 - 后台线程兜底，避免静默崩溃
+            self.error.emit(f"錯誤: {e}")
 
 
 class Ui_Main:
@@ -312,6 +378,11 @@ class Ui_Main:
         self.worker.emitMoney.connect(lambda text: self.moneyTotalShowEdit.setText(text))
         self.worker.emitStone.connect(lambda text: self.stoneTotalShowEdit.setText(text))
 
+        # 檢測 Tab 按钮连接
+        self.debugDetectBtn.clicked.connect(self._onDetect)
+        self.debugSaveBtn.clicked.connect(self._onSave)
+        self.debugRegressBtn.clicked.connect(self._onRegress)
+
         self.retranslateUi(Main, defaults)
         self.tabWidget.setCurrentIndex(0)
         QtCore.QMetaObject.connectSlotsByName(Main)
@@ -496,6 +567,9 @@ class Ui_Main:
         self.mysticInput.setDisabled(isDisabled)
         self.stoneInput.setDisabled(isDisabled)
         self.humanizeCheckBox.setDisabled(isDisabled)
+        self.debugDetectBtn.setDisabled(isDisabled)
+        self.debugSaveBtn.setDisabled(isDisabled)
+        self.debugRegressBtn.setDisabled(isDisabled)
 
     def startWorker(self) -> None:
         self.logTextBrowser.setText("")
@@ -508,3 +582,100 @@ class Ui_Main:
     def stopWorker(self) -> None:
         self.start = False
         self.startProperty(False)
+
+    # ---- 檢測 Tab 逻辑 ----
+
+    def _debugBusy(self) -> bool:
+        return self.worker.isRunning() or (
+            self._debugWorker is not None and self._debugWorker.isRunning()
+        )
+
+    def _setDebugBusy(self, busy: bool) -> None:
+        """调试运行中：禁用调试三按钮 + 禁用自动化开始按钮。"""
+        self.debugDetectBtn.setEnabled(not busy)
+        self.debugSaveBtn.setEnabled(not busy)
+        self.debugRegressBtn.setEnabled(not busy)
+        self.startButton.setEnabled(not busy)
+
+    def _startDebugWorker(self) -> DebugWorker | None:
+        if self._debugBusy():
+            self.debugResult.append("任務進行中，請稍候")
+            return None
+        self._setDebugBusy(True)
+        w = DebugWorker()
+        w.detectDone.connect(self._onDetectDone)
+        w.saveDone.connect(self._onSaveDone)
+        w.regressDone.connect(self._onRegressDone)
+        w.error.connect(self._onDebugError)
+        w.finished.connect(lambda: self._setDebugBusy(False))
+        self._debugWorker = w
+        return w
+
+    def _onDetect(self) -> None:
+        w = self._startDebugWorker()
+        if w is not None:
+            self.debugResult.append("檢測中...")
+            w.detect()
+
+    def _onSave(self) -> None:
+        prefix = self._selectedDebugPrefix()
+        if prefix is None:
+            self.debugResult.append("請先勾選一個項目")
+            return
+        w = self._startDebugWorker()
+        if w is not None:
+            w.save(self._debugScreenshot, prefix)
+
+    def _onRegress(self) -> None:
+        w = self._startDebugWorker()
+        if w is not None:
+            self.debugResult.append("回歸測試中...")
+            w.regress()
+
+    def _selectedDebugPrefix(self) -> str | None:
+        for prefix, rb, _sl in self.debugItems:
+            if rb.isChecked():
+                return prefix
+        return None
+
+    def _onDetectDone(self, scores, picked, screenshot) -> None:
+        self._debugScreenshot = screenshot
+        for prefix, rb, sl in self.debugItems:
+            item = next((s for s in scores if s.prefix == prefix), None)
+            if item is None or item.score is None:
+                sl.setText("N/A")
+                sl.setStyleSheet("color: gray;")
+            else:
+                sl.setText(f"{item.score:.2f}")
+                if item.passed:
+                    sl.setStyleSheet("color: green; font-weight: bold;")
+                else:
+                    sl.setStyleSheet("color: gray;")
+        # 自动勾选
+        for prefix, rb, _sl in self.debugItems:
+            rb.setChecked(prefix == picked)
+        self.debugResult.append("檢測完成")
+
+    def _onSaveDone(self, path) -> None:
+        self.debugResult.append(f"已保存: {path}")
+
+    def _onRegressDone(self, report) -> None:
+        self.debugResult.append(self._formatReport(report))
+
+    def _onDebugError(self, msg) -> None:
+        self.debugResult.append(msg)
+        self._setDebugBusy(False)
+
+    @staticmethod
+    def _formatReport(report) -> str:
+        lines = [f"回歸測試: {report.passed}/{report.total} 通過"]
+        for prefix, (p, t) in report.per_prefix.items():
+            lines.append(f"  {ITEM_DISPLAY.get(prefix, prefix)}: {p}/{t}")
+        if report.failures:
+            lines.append("未通過:")
+            for f in report.failures:
+                lines.append(
+                    f"  {Path(f.path).name} ({ITEM_DISPLAY.get(f.prefix, f.prefix)}): "
+                    f"{f.score:.2f} < {f.threshold}"
+                )
+        return "\n".join(lines)
